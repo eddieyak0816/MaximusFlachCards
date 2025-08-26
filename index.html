@@ -230,10 +230,16 @@
                     <div class="text-sm text-gray-600">
                         <span>Card <span id="currentCard">1</span> of <span id="totalCards">0</span></span>
                     </div>
-                    <div class="flex space-x-2">
-                        <span class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">Easy: <span id="easyCount">0</span></span>
-                        <span class="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm">Medium: <span id="mediumCount">0</span></span>
-                        <span class="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm">Hard: <span id="hardCount">0</span></span>
+                    <div class="flex items-center space-x-3">
+                        <!-- Dropdown showing the current card's category; updated per-card by showCurrentCard() -->
+                        <select id="currentCardCategorySelect" class="px-3 py-1 border border-gray-300 rounded text-sm">
+                            <option value="">Uncategorized</option>
+                        </select>
+                        <div class="flex space-x-2">
+                            <span class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">Easy: <span id="easyCount">0</span></span>
+                            <span class="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm">Medium: <span id="mediumCount">0</span></span>
+                            <span class="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm">Hard: <span id="hardCount">0</span></span>
+                        </div>
                     </div>
                 </div>
 
@@ -1318,7 +1324,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 videoTitle: videoData.title,
                 videoUrl: videoData.url,
                 subject: videoData.subject,
-                categoryId: document.getElementById('categorySelect') ? (document.getElementById('categorySelect').value || null) : null,
+                // Prefer category set on the flashcard object (e.g. AI-assigned); fallback to main categorySelect
+                categoryId: (flashcard.categoryId !== undefined && flashcard.categoryId !== null) ? flashcard.categoryId : (document.getElementById('categorySelect') ? (document.getElementById('categorySelect').value || null) : null),
                 createdAt: new Date().toISOString(),
                 nextReview: new Date().toISOString(), // Available immediately
                 interval: 1,
@@ -2222,16 +2229,9 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             document.getElementById('currentCard').textContent = currentCardIndex + 1;
             
             const container = document.getElementById('flashcardContainer');
-            // category select id is per-card so multiple renders don't collide
-            const catSelectId = `cardCategorySelect-${currentCardIndex}`;
             container.innerHTML = `
                 <div class="bg-white border-2 border-gray-200 rounded-xl p-8 text-center min-h-64 flex flex-col justify-center shadow-lg">
                     <div id="cardContent">
-                        <div class="flex justify-end mb-4">
-                            <select id="${catSelectId}" data-card-index="${currentCardIndex}" class="px-3 py-1 border border-gray-300 rounded text-sm">
-                                <option>Loading categories...</option>
-                            </select>
-                        </div>
                         <div id="cardFront" class="card-side">
                             <div class="text-lg font-semibold text-gray-800 mb-4">${card.front || ''}</div>
                             <div>
@@ -2251,37 +2251,29 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                 </div>
             `;
 
-            // Populate the category select for this card
+            // Wire the shared header category select to this card
             setTimeout(() => {
                 try {
-                    const sel = document.getElementById(catSelectId);
-                    if (!sel) return;
-                    // mark it so refreshAllCategorySelects will rebuild it
-                    sel.setAttribute('data-card-id', card.id || `local-${currentCardIndex}`);
-                    // Build options using the same approach as refreshAllCategorySelects
-                    // We'll call refreshAllCategorySelects to rebuild all selects including this one
+                    const headerSel = document.getElementById('currentCardCategorySelect');
+                    if (!headerSel) return;
+                    // mark header select so refreshAllCategorySelects rebuilds it
+                    headerSel.setAttribute('data-card-id', card.id || `local-${currentCardIndex}`);
                     refreshAllCategorySelects();
 
-                    // After rebuild, set the current value
-                    try {
-                        const valueToSet = (card.categoryId === undefined || card.categoryId === null) ? '' : String(card.categoryId);
-                        sel.value = valueToSet;
-                    } catch (e) { /* ignore */ }
+                    // set the current value
+                    try { headerSel.value = (card.categoryId === undefined || card.categoryId === null) ? '' : String(card.categoryId); } catch(e) {}
 
-                    // Change handler
-                    sel.onchange = function(e) {
-                        const v = sel.value;
+                    // attach change handler
+                    headerSel.onchange = function() {
+                        const v = headerSel.value;
                         if (v === '__add_new__') {
                             openCategoryManager();
-                            // After user adds, refresh selects and keep focus
                             setTimeout(() => { try { refreshAllCategorySelects(); } catch(e){} }, 100);
                             return;
                         }
-
-                        // Update in-memory card and persist if it exists in DB
                         card.categoryId = v === '' ? '' : v;
+                        // persist if saved
                         if (card && card.id && db) {
-                            // fetch and update
                             const tx = db.transaction(['flashcards'], 'readwrite');
                             const store = tx.objectStore('flashcards');
                             const req = store.get(card.id);
@@ -2294,7 +2286,7 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                             };
                         }
                     };
-                } catch (err) { console.error('Error populating card category select:', err); }
+                } catch (err) { console.error('Error wiring header category select:', err); }
             }, 20);
         }
 
