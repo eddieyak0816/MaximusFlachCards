@@ -2245,7 +2245,7 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                             <td style='padding:8px;border:1px solid #ddd;'><textarea id='back-${card.id}' style='width:100%;min-height:40px;' onchange='saveRowNow(${card.id})'>${card.back}</textarea></td>
                             <td style='padding:8px;border:1px solid #ddd;'>${card.nextReview ? new Date(card.nextReview).toLocaleDateString() : ''}</td>
                             <td style='padding:8px;border:1px solid #ddd;'>${card.timesStudied || 0}</td>
-                            <td style='padding:8px;border:1px solid #ddd;display:flex;gap:8px;'><button onclick='deleteFlashcard(${card.id})' style='background:#e53e3e;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;'>Delete</button></td>
+                            <td style='padding:8px;border:1px solid #ddd;display:flex;gap:8px;'><button onclick='openEditCardModal(${card.id})' style='background:#4a5568;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;'>Edit</button><button onclick='deleteFlashcard(${card.id})' style='background:#e53e3e;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;'>Delete</button></td>
                         </tr>`;
                     });
 
@@ -2585,6 +2585,122 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                     card[field] = value;
                     store.put(card);
                 }
+            };
+        }
+
+        // Open edit modal for a single card
+        function openEditCardModal(cardId) {
+            if (!db) return;
+            const tx = db.transaction(['flashcards', 'categories'], 'readonly');
+            const store = tx.objectStore('flashcards');
+            const catStore = tx.objectStore('categories');
+            const req = store.get(cardId);
+            req.onsuccess = function(evt) {
+                const card = evt.target.result;
+                const catReq = catStore.getAll();
+                catReq.onsuccess = function(e) {
+                    const cats = e.target.result || [];
+                    let modal = document.getElementById('editCardModal');
+                    if (!modal) {
+                        modal = document.createElement('div');
+                        modal.id = 'editCardModal';
+                        modal.style.position = 'fixed';
+                        modal.style.top = '0';
+                        modal.style.left = '0';
+                        modal.style.width = '100vw';
+                        modal.style.height = '100vh';
+                        modal.style.background = 'rgba(0,0,0,0.6)';
+                        modal.style.zIndex = '10001';
+                        modal.style.display = 'flex';
+                        modal.style.justifyContent = 'center';
+                        modal.style.alignItems = 'center';
+                        document.body.appendChild(modal);
+                    }
+
+                    const catOptions = cats.map(c => `<option value='${c.id}'>${c.name}</option>`).join('');
+                    const selectedCat = card && (card.categoryId !== undefined && card.categoryId !== null) ? String(card.categoryId) : '';
+
+                    modal.innerHTML = `
+                        <div style='background:white;max-width:700px;width:95vw;border-radius:12px;padding:20px;'>
+                            <h2 style='font-size:1.25rem;margin-bottom:8px;'>Edit Flashcard</h2>
+                            <div style='display:flex;flex-direction:column;gap:8px;'>
+                                <label>Front</label>
+                                <textarea id='editFront' style='width:100%;min-height:80px;padding:8px;border:1px solid #ddd;border-radius:6px;'>${card ? (card.front || '') : ''}</textarea>
+                                <label>Back</label>
+                                <textarea id='editBack' style='width:100%;min-height:120px;padding:8px;border:1px solid #ddd;border-radius:6px;'>${card ? (card.back || '') : ''}</textarea>
+                                <label>Category</label>
+                                <div style='display:flex;gap:8px;align-items:center;'>
+                                    <select id='editCategorySelect' style='flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;'>
+                                        <option value=''>Uncategorized</option>
+                                        ${catOptions}
+                                        <option value='__add_new__'>Add New...</option>
+                                    </select>
+                                    <div id='editAddContainer'></div>
+                                </div>
+                            </div>
+                            <div style='margin-top:12px;display:flex;justify-content:flex-end;gap:8px;'>
+                                <button onclick='closeEditModal()' style='padding:8px 12px;background:#a0aec0;color:white;border:none;border-radius:6px;'>Cancel</button>
+                                <button onclick='saveEditModal(${cardId})' style='padding:8px 12px;background:#3182ce;color:white;border:none;border-radius:6px;'>Save</button>
+                            </div>
+                        </div>
+                    `;
+
+                    // Set selected category
+                    const editSel = document.getElementById('editCategorySelect');
+                    if (editSel) editSel.value = selectedCat;
+
+                    // Hook add-new behavior
+                    editSel.addEventListener('change', async function() {
+                        if (this.value === '__add_new__') {
+                            const container = document.getElementById('editAddContainer');
+                            container.innerHTML = `<input id='editNewCat' placeholder='New category name' style='padding:6px;border:1px solid #ccc;border-radius:6px;' /><button id='editNewAdd' style='background:#3182ce;color:white;border:none;padding:6px 8px;border-radius:6px;margin-left:6px;cursor:pointer;'>Add</button><button id='editNewCancel' style='background:#a0aec0;color:white;border:none;padding:6px 8px;border-radius:6px;margin-left:6px;cursor:pointer;'>Cancel</button>`;
+                            document.getElementById('editNewAdd').addEventListener('click', async () => {
+                                const name = document.getElementById('editNewCat').value.trim();
+                                if (!name) return alert('Enter a category name');
+                                const id = await createCategoryFromPrompt(name);
+                                if (!id) return alert('Could not create category');
+                                // reload modal to include new category
+                                openEditCardModal(cardId);
+                            });
+                            document.getElementById('editNewCancel').addEventListener('click', () => {
+                                document.getElementById('editAddContainer').innerHTML = '';
+                                editSel.value = '';
+                            });
+                        } else {
+                            const container = document.getElementById('editAddContainer');
+                            if (container) container.innerHTML = '';
+                        }
+                    });
+                };
+            };
+        }
+
+        function closeEditModal() {
+            const modal = document.getElementById('editCardModal');
+            if (modal) modal.remove();
+        }
+
+        async function saveEditModal(cardId) {
+            if (!db) return;
+            const front = document.getElementById('editFront').value;
+            const back = document.getElementById('editBack').value;
+            const sel = document.getElementById('editCategorySelect');
+            const raw = sel ? sel.value : '';
+            const categoryId = (raw === '' || raw === null) ? '' : (raw === '__add_new__' ? '' : (isNaN(parseInt(raw)) ? raw : parseInt(raw)));
+
+            const tx = db.transaction(['flashcards'], 'readwrite');
+            const store = tx.objectStore('flashcards');
+            const req = store.get(cardId);
+            req.onsuccess = function(evt) {
+                const card = evt.target.result || { id: cardId };
+                card.front = front;
+                card.back = back;
+                card.categoryId = categoryId;
+                store.put(card);
+            };
+            tx.oncomplete = function() {
+                closeEditModal();
+                showAllCards();
             };
         }
 
