@@ -1362,9 +1362,18 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 modal.style.display = 'flex';
                 modal.style.justifyContent = 'center';
                 modal.style.alignItems = 'center';
+                const globals = getGlobalLimits();
                 modal.innerHTML = `
                     <div style="background:white;max-width:700px;width:95vw;border-radius:12px;padding:20px;">
                         <h2 style="font-size:1.25rem;margin-bottom:8px;">Manage Categories</h2>
+                        <div style='display:flex;gap:12px;align-items:center;margin-bottom:10px;'>
+                            <div style='font-size:0.95rem;'>Global defaults:</div>
+                            <div style='display:flex;gap:8px;align-items:center;'>
+                                <label style='display:flex;align-items:center;gap:6px;'>New/day: <input id='globalNew' value='${globals.new || ''}' placeholder='e.g. 5' style='width:80px;padding:6px;border:1px solid #ddd;border-radius:6px;'/></label>
+                                <label style='display:flex;align-items:center;gap:6px;'>Review/day: <input id='globalReview' value='${globals.review || ''}' placeholder='e.g. 50' style='width:80px;padding:6px;border:1px solid #ddd;border-radius:6px;'/></label>
+                                <button onclick='saveGlobalLimits()' style='padding:6px 10px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer;'>Save globals</button>
+                            </div>
+                        </div>
                         <div id="categoryManagerContent"></div>
                         <div style="margin-top:12px;display:flex;justify-content:space-between;">
                             <div>
@@ -1378,6 +1387,31 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 document.body.appendChild(modal);
             }
             refreshCategoryManager();
+        }
+
+        function getGlobalLimits() {
+            const raw = localStorage.getItem('globalCategoryLimits');
+            try {
+                if (!raw) return { new: '', review: '' };
+                const parsed = JSON.parse(raw || '{}');
+                return { new: parsed.newCardsPerDay || '', review: parsed.reviewCardsPerDay || '' };
+            } catch (e) { return { new: '', review: '' }; }
+        }
+
+        function saveGlobalLimits() {
+            const newVal = document.getElementById('globalNew') ? document.getElementById('globalNew').value.trim() : '';
+            const revVal = document.getElementById('globalReview') ? document.getElementById('globalReview').value.trim() : '';
+            const parsed = {
+                newCardsPerDay: newVal === '' ? null : parseInt(newVal,10),
+                reviewCardsPerDay: revVal === '' ? null : parseInt(revVal,10)
+            };
+            if ((parsed.newCardsPerDay !== null && (isNaN(parsed.newCardsPerDay) || parsed.newCardsPerDay < 0)) || (parsed.reviewCardsPerDay !== null && (isNaN(parsed.reviewCardsPerDay) || parsed.reviewCardsPerDay < 0))) {
+                return alert('Invalid global limit values');
+            }
+            localStorage.setItem('globalCategoryLimits', JSON.stringify(parsed));
+            alert('Global category limits saved');
+            // refresh UI where counts may depend on this
+            refreshCategoryReviewPanel();
         }
 
         function refreshCategoryManager() {
@@ -1394,13 +1428,55 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     container.innerHTML = '<div class="text-sm text-gray-600">No categories yet.</div>';
                     return;
                 }
-                let html = '<ul style="list-style:none;padding:0;margin:0;">';
+                let html = '<div style="display:flex;flex-direction:column;gap:12px;">';
                 cats.forEach(cat => {
-                    html += `<li style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f3f3f3;"><div>${cat.name}</div><div><button onclick="editCategory(${cat.id})" style="margin-right:8px;padding:6px 10px;background:#f59e0b;color:white;border:none;border-radius:6px;">Edit</button><button onclick="deleteCategory(${cat.id})" style="padding:6px 10px;background:#ef4444;color:white;border:none;border-radius:6px;">Delete</button></div></li>`;
+                    const newVal = (cat.newCardsPerDay === null || cat.newCardsPerDay === undefined) ? '' : String(cat.newCardsPerDay);
+                    const revVal = (cat.reviewCardsPerDay === null || cat.reviewCardsPerDay === undefined) ? '' : String(cat.reviewCardsPerDay);
+                    html += `<div style="border:1px solid #f3f3f3;padding:10px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
+                        <div style='flex:1'>
+                            <div style='font-weight:600;margin-bottom:6px;'>${escapeHtml(cat.name)}</div>
+                            <div style='display:flex;gap:8px;align-items:center;font-size:0.9rem;color:#555;'>
+                                <label style='display:flex;align-items:center;gap:6px;'>New/day: <input id='newLimit-${cat.id}' value='${newVal}' placeholder='global' style='width:72px;padding:6px;border:1px solid #ddd;border-radius:6px;'/></label>
+                                <label style='display:flex;align-items:center;gap:6px;'>Review/day: <input id='revLimit-${cat.id}' value='${revVal}' placeholder='global' style='width:72px;padding:6px;border:1px solid #ddd;border-radius:6px;'/></label>
+                                <span style='margin-left:8px;font-size:0.85rem;color:#777;'>Leave blank to use global defaults</span>
+                            </div>
+                        </div>
+                        <div style='display:flex;gap:8px;align-items:center;'>
+                            <button onclick="saveCategorySettings(${cat.id})" style='padding:6px 10px;background:#10b981;color:white;border:none;border-radius:6px;cursor:pointer;'>Save</button>
+                            <button onclick="editCategory(${cat.id})" style='margin-left:4px;padding:6px 10px;background:#f59e0b;color:white;border:none;border-radius:6px;cursor:pointer;'>Rename</button>
+                            <button onclick="deleteCategory(${cat.id})" style='padding:6px 10px;background:#ef4444;color:white;border:none;border-radius:6px;cursor:pointer;'>Delete</button>
+                        </div>
+                    </div>`;
                 });
-                html += '</ul>';
+                html += '</div>';
                 container.innerHTML = html;
             };
+        }
+
+        // Save per-category settings into the categories object store
+        function saveCategorySettings(id) {
+            const newEl = document.getElementById(`newLimit-${id}`);
+            const revEl = document.getElementById(`revLimit-${id}`);
+            if (!db) return alert('Database not available');
+            const tx = db.transaction(['categories'], 'readwrite');
+            const store = tx.objectStore('categories');
+            const req = store.get(id);
+            req.onsuccess = function() {
+                const cat = req.result;
+                if (!cat) return alert('Category not found');
+                const newVal = newEl && newEl.value.trim() !== '' ? parseInt(newEl.value,10) : null;
+                const revVal = revEl && revEl.value.trim() !== '' ? parseInt(revEl.value,10) : null;
+                if (newVal !== null && (isNaN(newVal) || newVal < 0)) return alert('Invalid New/day value');
+                if (revVal !== null && (isNaN(revVal) || revVal < 0)) return alert('Invalid Review/day value');
+                cat.newCardsPerDay = newVal;
+                cat.reviewCardsPerDay = revVal;
+                store.put(cat).onsuccess = function() {
+                    refreshCategoryManager();
+                    loadCategories();
+                    refreshAllCategorySelects();
+                };
+            };
+            req.onerror = function() { alert('Error accessing category'); };
         }
 
         function addCategory() {
@@ -1408,7 +1484,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
             if (!name) return alert('Enter a category name');
             const tx = db.transaction(['categories'], 'readwrite');
             const store = tx.objectStore('categories');
-            const req = store.add({ name });
+            // store per-category limits (null means use global default)
+            const req = store.add({ name, newCardsPerDay: null, reviewCardsPerDay: null });
             req.onsuccess = function() {
                 document.getElementById('newCategoryName').value = '';
                 refreshCategoryManager();
@@ -1574,12 +1651,35 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     return;
                 }
                 panel.innerHTML = '';
+                // Load global defaults and category settings to annotate
+                const globalsRaw = localStorage.getItem('globalCategoryLimits');
+                let globals = { newCardsPerDay: null, reviewCardsPerDay: null };
+                try { if (globalsRaw) globals = Object.assign(globals, JSON.parse(globalsRaw)); } catch(e) {}
+
                 list.forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'flex justify-between items-center';
-                    div.innerHTML = `<div>${escapeHtml(item.name || 'Uncategorized')} <span class="text-xs text-gray-400">(${item.dueCount} due)</span></div>` +
+                    const catId = item.id === undefined || item.id === null ? '' : String(item.id);
+                    // Attempt to load category settings synchronously from DB isn't possible here; instead show global or unknown
+                    // We'll try to read from indexedDB quickly
+                    const el = document.createElement('div');
+                    el.className = 'flex justify-between items-center';
+                    el.innerHTML = `<div>${escapeHtml(item.name || 'Uncategorized')} <span class="text-xs text-gray-400">(${item.dueCount} due)</span> <span id='limits-${catId}' class='text-xs text-gray-500 ml-2'></span></div>` +
                         `<div><button class="text-xs text-blue-600 hover:underline" onclick="startCategoryReview('${item.id}')">Review</button></div>`;
-                    panel.appendChild(div);
+                    panel.appendChild(el);
+
+                    // async load category settings if available
+                    if (db) {
+                        const cTx = db.transaction(['categories'], 'readonly');
+                        const cStore = cTx.objectStore('categories');
+                        cStore.get(catId).onsuccess = function(evt) {
+                            const cat = evt.target.result || {};
+                            const perNew = (cat && (cat.newCardsPerDay === null || cat.newCardsPerDay === undefined)) ? globals.newCardsPerDay : (cat ? cat.newCardsPerDay : globals.newCardsPerDay);
+                            const perReview = (cat && (cat.reviewCardsPerDay === null || cat.reviewCardsPerDay === undefined)) ? globals.reviewCardsPerDay : (cat ? cat.reviewCardsPerDay : globals.reviewCardsPerDay);
+                            const newText = (perNew === null || perNew === undefined) ? (globals.newCardsPerDay ? `New/day ${globals.newCardsPerDay}` : '') : `New/day ${perNew}`;
+                            const revText = (perReview === null || perReview === undefined) ? (globals.reviewCardsPerDay ? `Rev/day ${globals.reviewCardsPerDay}` : '') : `Rev/day ${perReview}`;
+                            const target = document.getElementById(`limits-${catId}`);
+                            if (target) target.textContent = `${newText}${newText && revText ? ' · ' : ''}${revText}`;
+                        };
+                    }
                 });
             });
         }
@@ -1592,32 +1692,55 @@ Make sure each flashcard tests something specific from the transcript content.`;
             req.onsuccess = function() {
                 const all = req.result || [];
                 const now = new Date();
-                const filtered = all.filter(c => {
+                // Build filtered list then apply per-category limits
+                const filteredAll = all.filter(c => {
                     const catKey = (c.categoryId === undefined || c.categoryId === null) ? '' : String(c.categoryId);
                     const matchCat = String(categoryId) === String(catKey);
                     const nr = c.nextReview ? new Date(c.nextReview) : new Date(0);
                     return matchCat && nr <= now;
                 });
 
-                if (filtered.length === 0) {
-                    alert('No due cards in this category right now.');
-                    return;
-                }
+                // Load category settings and globals
+                const catTx = db.transaction(['categories'], 'readonly');
+                const catStore = catTx.objectStore('categories');
+                catStore.get(Number(categoryId)).onsuccess = function(evt) {
+                    const cat = evt.target.result || {};
+                    const globalsRaw = localStorage.getItem('globalCategoryLimits');
+                    let globals = { newCardsPerDay: null, reviewCardsPerDay: null };
+                    try { if (globalsRaw) globals = Object.assign(globals, JSON.parse(globalsRaw)); } catch(e) {}
 
-                flashcards = filtered;
-                studyQueue = [...filtered];
-                currentCardIndex = 0;
-                cardDifficulties = {};
-                setupFlashcardStudy();
-                showStep(3);
-                // Render the first card slightly after the DOM updates to avoid race conditions
-                setTimeout(() => {
-                    try {
-                        if (typeof showCurrentCard === 'function') showCurrentCard();
-                    } catch (err) {
-                        console.error('Error showing first category card:', err);
+                    const perNew = (cat && (cat.newCardsPerDay === null || cat.newCardsPerDay === undefined)) ? globals.newCardsPerDay : (cat ? cat.newCardsPerDay : globals.newCardsPerDay);
+                    const perReview = (cat && (cat.reviewCardsPerDay === null || cat.reviewCardsPerDay === undefined)) ? globals.reviewCardsPerDay : (cat ? cat.reviewCardsPerDay : globals.reviewCardsPerDay);
+                    const newLimit = (perNew === null || perNew === undefined) ? Infinity : Number(perNew);
+                    const reviewLimit = (perReview === null || perReview === undefined) ? Infinity : Number(perReview);
+
+                    const newCards = filteredAll.filter(c => !c.timesStudied || c.repetitions === 0).sort((a,b)=>new Date(a.nextReview)-new Date(b.nextReview));
+                    const reviewCards = filteredAll.filter(c => c.timesStudied && c.repetitions !== 0).sort((a,b)=>new Date(a.nextReview)-new Date(b.nextReview));
+
+                    const selected = [];
+                    selected.push(...newCards.slice(0, newLimit));
+                    selected.push(...reviewCards.slice(0, reviewLimit));
+
+                    if (selected.length === 0) {
+                        alert('No due cards in this category right now.');
+                        return;
                     }
-                }, 50);
+
+                    flashcards = selected;
+                    studyQueue = [...selected];
+                    currentCardIndex = 0;
+                    cardDifficulties = {};
+                    setupFlashcardStudy();
+                    showStep(3);
+                    setTimeout(() => {
+                        try {
+                            if (typeof showCurrentCard === 'function') showCurrentCard();
+                        } catch (err) {
+                            console.error('Error showing first category card:', err);
+                        }
+                    }, 50);
+                };
+                catStore.get(Number(categoryId)).onerror = function() { alert('Error loading category settings'); };
             };
         }
 
@@ -2507,23 +2630,69 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                 callback([]);
                 return;
             }
-            
-            const transaction = db.transaction(['flashcards'], 'readonly');
-            const store = transaction.objectStore('flashcards');
-            const index = store.index('nextReview');
-            
-            const now = new Date().toISOString();
-            const range = IDBKeyRange.upperBound(now);
-            const request = index.getAll(range);
-            
-            request.onsuccess = function() {
-                callback(request.result || []);
+            // Load categories and global defaults to compute per-category limits
+            const catTx = db.transaction(['categories'], 'readonly');
+            const catStore = catTx.objectStore('categories');
+            catStore.getAll().onsuccess = function(evt) {
+                const cats = evt.target.result || [];
+                const catMap = {};
+                cats.forEach(c => { catMap[String(c.id)] = c; });
+
+                const globalsRaw = localStorage.getItem('globalCategoryLimits');
+                let globals = { newCardsPerDay: null, reviewCardsPerDay: null };
+                try { if (globalsRaw) globals = Object.assign(globals, JSON.parse(globalsRaw)); } catch(e) {}
+
+                // fetch all due cards
+                const transaction = db.transaction(['flashcards'], 'readonly');
+                const store = transaction.objectStore('flashcards');
+                const index = store.index('nextReview');
+                const now = new Date().toISOString();
+                const range = IDBKeyRange.upperBound(now);
+                const request = index.getAll(range);
+
+                request.onsuccess = function() {
+                    const allDue = request.result || [];
+
+                    // Group cards by category and by new vs review
+                    const grouped = {}; // catId -> { new:[], review:[] }
+                    allDue.forEach(card => {
+                        const catKey = (card.categoryId === undefined || card.categoryId === null || card.categoryId === '') ? '' : String(card.categoryId);
+                        if (!grouped[catKey]) grouped[catKey] = { new: [], review: [] };
+                        // consider a card 'new' if timesStudied is falsy or repetitions===0 (never reviewed)
+                        const isNew = !card.timesStudied || card.repetitions === 0;
+                        if (isNew) grouped[catKey].new.push(card); else grouped[catKey].review.push(card);
+                    });
+
+                    const finalList = [];
+                    // For each category, apply limits: per-category overrides globals when set
+                    Object.keys(grouped).forEach(catId => {
+                        const cat = catMap[catId] || {};
+                        const perNew = (cat.newCardsPerDay === null || cat.newCardsPerDay === undefined) ? globals.newCardsPerDay : cat.newCardsPerDay;
+                        const perReview = (cat.reviewCardsPerDay === null || cat.reviewCardsPerDay === undefined) ? globals.reviewCardsPerDay : cat.reviewCardsPerDay;
+
+                        // Convert null to Infinity (no limit)
+                        const newLimit = (perNew === null || perNew === undefined) ? Infinity : Number(perNew);
+                        const reviewLimit = (perReview === null || perReview === undefined) ? Infinity : Number(perReview);
+
+                        // Add up to limits preserving original ordering (by nextReview asc)
+                        const newSorted = grouped[catId].new.sort((a,b) => new Date(a.nextReview) - new Date(b.nextReview));
+                        const reviewSorted = grouped[catId].review.sort((a,b) => new Date(a.nextReview) - new Date(b.nextReview));
+
+                        finalList.push(...newSorted.slice(0, newLimit));
+                        finalList.push(...reviewSorted.slice(0, reviewLimit));
+                    });
+
+                    // Flatten and sort overall by nextReview asc so study order is sensible
+                    finalList.sort((a,b) => new Date(a.nextReview) - new Date(b.nextReview));
+                    callback(finalList);
+                };
+
+                request.onerror = function() {
+                    console.error('Error fetching due flashcards:', request.error);
+                    callback([]);
+                };
             };
-            
-            request.onerror = function() {
-                console.error('Error fetching due flashcards:', request.error);
-                callback([]);
-            };
+            catStore.getAll().onerror = function() { callback([]); };
         }
 
         // Start a review session with due cards
