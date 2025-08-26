@@ -150,6 +150,16 @@
                 </div>
                 
                 <div class="space-y-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="block text-sm font-medium text-gray-700">Category</label>
+                        <button onclick="openCategoryManager()" class="text-sm text-blue-600 hover:underline">Manage Categories</button>
+                    </div>
+                    <div class="mb-4">
+                        <select id="categorySelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                            <option value="">Uncategorized</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">Choose a category for these flashcards (you can manage categories).</p>
+                    </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">YouTube Video URL</label>
                         <div class="flex space-x-2">
@@ -249,7 +259,8 @@
 
         // Initialize IndexedDB for local storage
         function initDatabase() {
-            const request = indexedDB.open('FlashcardDB', 1);
+            // bump DB version to 2 to add categories store if needed
+            const request = indexedDB.open('FlashcardDB', 2);
             
             request.onerror = function(event) {
                 console.error('Database error:', event.target.error);
@@ -262,19 +273,29 @@
             
             request.onupgradeneeded = function(event) {
                 db = event.target.result;
-                
-                // Create flashcards store
-                const flashcardStore = db.createObjectStore('flashcards', { keyPath: 'id', autoIncrement: true });
-                flashcardStore.createIndex('videoTitle', 'videoTitle', { unique: false });
-                flashcardStore.createIndex('nextReview', 'nextReview', { unique: false });
-                flashcardStore.createIndex('createdAt', 'createdAt', { unique: false });
-                
-                // Create study sessions store
-                const sessionStore = db.createObjectStore('studySessions', { keyPath: 'id', autoIncrement: true });
-                sessionStore.createIndex('flashcardId', 'flashcardId', { unique: false });
-                sessionStore.createIndex('studiedAt', 'studiedAt', { unique: false });
-                
-                console.log('Database schema created');
+
+                // Create flashcards store if missing
+                if (!db.objectStoreNames.contains('flashcards')) {
+                    const flashcardStore = db.createObjectStore('flashcards', { keyPath: 'id', autoIncrement: true });
+                    flashcardStore.createIndex('videoTitle', 'videoTitle', { unique: false });
+                    flashcardStore.createIndex('nextReview', 'nextReview', { unique: false });
+                    flashcardStore.createIndex('createdAt', 'createdAt', { unique: false });
+                }
+
+                // Create study sessions store if missing
+                if (!db.objectStoreNames.contains('studySessions')) {
+                    const sessionStore = db.createObjectStore('studySessions', { keyPath: 'id', autoIncrement: true });
+                    sessionStore.createIndex('flashcardId', 'flashcardId', { unique: false });
+                    sessionStore.createIndex('studiedAt', 'studiedAt', { unique: false });
+                }
+
+                // Create categories store (new)
+                if (!db.objectStoreNames.contains('categories')) {
+                    const catStore = db.createObjectStore('categories', { keyPath: 'id', autoIncrement: true });
+                    catStore.createIndex('name', 'name', { unique: true });
+                }
+
+                console.log('Database schema created/updated');
             };
         }
 
@@ -457,7 +478,24 @@
 
             // Save to DB if available and not already saved
             if (db && flashcards.length > 0) {
-                flashcards.forEach(flashcard => saveFlashcard(flashcard, videoData));
+                // Load existing categories to help auto-assign category IDs
+                const categories = await new Promise(resolve => {
+                    const tx = db.transaction(['categories'], 'readonly');
+                    const store = tx.objectStore('categories');
+                    const req = store.getAll();
+                    req.onsuccess = () => resolve(req.result || []);
+                    req.onerror = () => resolve([]);
+                });
+
+                flashcards.forEach(flashcard => {
+                    // Determine a best-fit category from existing categories; fallback to uncategorized ('')
+                    try {
+                        flashcard.categoryId = determineCategoryId(flashcard, categories);
+                    } catch (e) {
+                        flashcard.categoryId = '';
+                    }
+                    saveFlashcard(flashcard, videoData);
+                });
             }
 
             videoData.flashcardsGenerated = true;
@@ -837,6 +875,33 @@ Make sure each flashcard tests something specific from the transcript content.`;
             return flashcards.length > 0 ? flashcards : [];
         }
 
+        // Determine best-fit category id for a generated flashcard using simple heuristics
+        function determineCategoryId(flashcard, categories) {
+            if (!categories || categories.length === 0) return '';
+            const text = ((flashcard.front || '') + ' ' + (flashcard.back || '')).toLowerCase();
+
+            // Simple heuristics: match category name tokens in the card text
+            let bestMatch = { id: '', score: 0 };
+            categories.forEach(cat => {
+                const name = (cat.name || '').toLowerCase();
+                if (!name) return;
+                const tokens = name.split(/[^a-z0-9]+/).filter(Boolean);
+                let score = 0;
+                tokens.forEach(tok => {
+                    if (tok.length > 2 && text.includes(tok)) score += 1;
+                });
+                // Also give small score if full category name appears
+                if (name.length > 3 && text.includes(name)) score += 2;
+
+                if (score > bestMatch.score) {
+                    bestMatch = { id: cat.id, score };
+                }
+            });
+
+            // Require at least one token match to assign; else uncategorized
+            return bestMatch.score > 0 ? bestMatch.id : '';
+        }
+
         // Fallback to pattern matching (current demo method)
         async function usePatternMatchingFallback(transcript, videoData) {
             // Use the existing pattern matching logic
@@ -1165,6 +1230,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 videoTitle: videoData.title,
                 videoUrl: videoData.url,
                 subject: videoData.subject,
+                categoryId: document.getElementById('categorySelect') ? (document.getElementById('categorySelect').value || null) : null,
                 createdAt: new Date().toISOString(),
                 nextReview: new Date().toISOString(), // Available immediately
                 interval: 1,
@@ -1181,6 +1247,126 @@ Make sure each flashcard tests something specific from the transcript content.`;
             
             request.onerror = function() {
                 console.error('Error saving flashcard:', request.error);
+            };
+        }
+
+        // Category management
+        function openCategoryManager() {
+            let modal = document.getElementById('categoryModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'categoryModal';
+                modal.style.position = 'fixed';
+                modal.style.top = '0';
+                modal.style.left = '0';
+                modal.style.width = '100vw';
+                modal.style.height = '100vh';
+                modal.style.background = 'rgba(0,0,0,0.6)';
+                modal.style.zIndex = '10000';
+                modal.style.display = 'flex';
+                modal.style.justifyContent = 'center';
+                modal.style.alignItems = 'center';
+                modal.innerHTML = `
+                    <div style="background:white;max-width:700px;width:95vw;border-radius:12px;padding:20px;">
+                        <h2 style="font-size:1.25rem;margin-bottom:8px;">Manage Categories</h2>
+                        <div id="categoryManagerContent"></div>
+                        <div style="margin-top:12px;display:flex;justify-content:space-between;">
+                            <div>
+                                <input id="newCategoryName" placeholder="New category name" style="padding:8px;border:1px solid #ddd;border-radius:6px;min-width:220px;">
+                                <button onclick="addCategory()" style="margin-left:8px;padding:8px 12px;background:#10b981;color:white;border:none;border-radius:6px;cursor:pointer;">Add</button>
+                            </div>
+                            <button onclick="document.getElementById('categoryModal').remove()" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:6px;">Close</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            refreshCategoryManager();
+        }
+
+        function refreshCategoryManager() {
+            const container = document.getElementById('categoryManagerContent');
+            container.innerHTML = '<div>Loading...</div>';
+
+            if (!db) return;
+            const tx = db.transaction(['categories'], 'readonly');
+            const store = tx.objectStore('categories');
+            const req = store.getAll();
+            req.onsuccess = function() {
+                const cats = req.result || [];
+                if (cats.length === 0) {
+                    container.innerHTML = '<div class="text-sm text-gray-600">No categories yet.</div>';
+                    return;
+                }
+                let html = '<ul style="list-style:none;padding:0;margin:0;">';
+                cats.forEach(cat => {
+                    html += `<li style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f3f3f3;"><div>${cat.name}</div><div><button onclick="editCategory(${cat.id})" style="margin-right:8px;padding:6px 10px;background:#f59e0b;color:white;border:none;border-radius:6px;">Edit</button><button onclick="deleteCategory(${cat.id})" style="padding:6px 10px;background:#ef4444;color:white;border:none;border-radius:6px;">Delete</button></div></li>`;
+                });
+                html += '</ul>';
+                container.innerHTML = html;
+            };
+        }
+
+        function addCategory() {
+            const name = document.getElementById('newCategoryName').value.trim();
+            if (!name) return alert('Enter a category name');
+            const tx = db.transaction(['categories'], 'readwrite');
+            const store = tx.objectStore('categories');
+            const req = store.add({ name });
+            req.onsuccess = function() {
+                document.getElementById('newCategoryName').value = '';
+                refreshCategoryManager();
+                loadCategories();
+            };
+            req.onerror = function(e) {
+                alert('Error adding category: ' + e.target.error);
+            };
+        }
+
+        function editCategory(id) {
+            const newName = prompt('New name for category:');
+            if (!newName) return;
+            const tx = db.transaction(['categories'], 'readwrite');
+            const store = tx.objectStore('categories');
+            const req = store.get(id);
+            req.onsuccess = function() {
+                const cat = req.result;
+                if (!cat) return alert('Category not found');
+                cat.name = newName.trim();
+                store.put(cat).onsuccess = function() {
+                    refreshCategoryManager();
+                    loadCategories();
+                };
+            };
+        }
+
+        function deleteCategory(id) {
+            if (!confirm('Delete this category?')) return;
+            const tx = db.transaction(['categories'], 'readwrite');
+            const store = tx.objectStore('categories');
+            store.delete(id).onsuccess = function() {
+                refreshCategoryManager();
+                loadCategories();
+            };
+        }
+
+        function loadCategories() {
+            const select = document.getElementById('categorySelect');
+            if (!select) return;
+            // Clear existing options but keep Unclassified
+            select.innerHTML = '<option value="">Uncategorized</option>';
+            if (!db) return;
+            const tx = db.transaction(['categories'], 'readonly');
+            const store = tx.objectStore('categories');
+            const req = store.getAll();
+            req.onsuccess = function() {
+                const cats = req.result || [];
+                cats.forEach(cat => {
+                    const opt = document.createElement('option');
+                    opt.value = cat.id;
+                    opt.textContent = cat.name;
+                    select.appendChild(opt);
+                });
             };
         }
 
@@ -1708,32 +1894,19 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                 <div class="bg-white border-2 border-gray-200 rounded-xl p-8 text-center min-h-64 flex flex-col justify-center shadow-lg">
                     <div id="cardContent">
                         <div id="cardFront" class="card-side">
-                            <div class="text-lg font-semibold text-gray-800 mb-4">${card.front}</div>
-                            <div class="flex justify-center mb-4">
-                                <button onclick="flipCard()" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg">
-                                    Show Answer 👁️
-                                </button>
+                            <div class="text-lg font-semibold text-gray-800 mb-4">${card.front || ''}</div>
+                            <div>
+                                <button onclick="flipCard()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">Show Answer</button>
                             </div>
                         </div>
                         <div id="cardBack" class="card-side hidden">
-                            <div class="text-gray-700 mb-6">${card.back}</div>
-                            <div class="space-y-2">
-                                <p class="text-sm text-gray-600 mb-3">How well did you know this?</p>
-                                <div class="flex justify-center space-x-3">
-                                    <button onclick="rateCard('hard')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">
-                                        😰 Hard
-                                    </button>
-                                    <button onclick="rateCard('medium')" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm">
-                                        🤔 Medium
-                                    </button>
-                                    <button onclick="rateCard('easy')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm">
-                                        😊 Easy
-                                    </button>
-                                </div>
-                                <button onclick="flipCardBack()" class="mt-4 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">
-                                    ← Back to Question
-                                </button>
+                            <div class="text-lg font-semibold text-gray-800 mb-4">${card.back || ''}</div>
+                            <div class="flex justify-center space-x-3 mt-4">
+                                <button onclick="rateCard('hard')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">😰 Hard</button>
+                                <button onclick="rateCard('medium')" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm">🤔 Medium</button>
+                                <button onclick="rateCard('easy')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm">😊 Easy</button>
                             </div>
+                            <button onclick="flipCardBack()" class="mt-4 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">← Back to Question</button>
                         </div>
                     </div>
                 </div>
@@ -1899,6 +2072,7 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             // Update dashboard after a short delay to ensure DB is ready
             setTimeout(() => {
                 updateDashboard();
+                loadCategories();
             }, 500);
         }
 
@@ -1980,7 +2154,7 @@ Be specific - reference actual content from the transcript. Keep under 200 words
         }
 
         // Show all cards in a modal table for editing/deleting
-        function showAllCards() {
+    function showAllCards() {
             if (!db) {
                 alert('Database not available');
                 return;
@@ -2015,11 +2189,30 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                     </div>`;
                     document.body.appendChild(modal);
                 }
-                // Build table
-                let tableHtml = `<table style='width:100%;border-collapse:collapse;'>
+
+                // Fetch categories then build table
+                const catTx = db.transaction(['categories'], 'readonly');
+                const catStore = catTx.objectStore('categories');
+                catStore.getAll().onsuccess = function(evt) {
+                    const catList = evt.target.result || [];
+
+                    // Build table with bulk controls
+                    let tableHtml = `<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;'>
+                        <div>
+                            <button onclick="bulkDeleteSelected()" style='background:#e53e3e;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;margin-right:8px;'>Delete Selected</button>
+                            <select id='bulkCategorySelect' style='padding:6px;border-radius:6px;border:1px solid #ccc;'>
+                                <option value=''>Set category...</option>
+                            </select>
+                            <button onclick="bulkChangeCategory()" style='background:#3182ce;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;margin-left:8px;'>Apply</button>
+                        </div>
+                        <div></div>
+                    </div>
+                <table style='width:100%;border-collapse:collapse;'>
                     <thead>
                         <tr style='background:#f3f3f3;'>
+                                <th style='padding:8px;border:1px solid #ddd;width:36px;text-align:center;'><input type='checkbox' id='masterSelect' onchange='toggleMasterSelect(this)'/></th>
                             <th style='padding:8px;border:1px solid #ddd;'>Video Title</th>
+                            <th style='padding:8px;border:1px solid #ddd;'>Category</th>
                             <th style='padding:8px;border:1px solid #ddd;'>Front</th>
                             <th style='padding:8px;border:1px solid #ddd;'>Back</th>
                             <th style='padding:8px;border:1px solid #ddd;'>Next Review</th>
@@ -2028,18 +2221,232 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                         </tr>
                     </thead>
                     <tbody>`;
-                allCards.forEach(card => {
-                    tableHtml += `<tr>
-                        <td style='padding:8px;border:1px solid #ddd;'>${card.videoTitle}</td>
-                        <td style='padding:8px;border:1px solid #ddd;'><textarea style='width:100%;min-height:40px;' onchange='updateCardField(${card.id},"front",this.value)'>${card.front}</textarea></td>
-                        <td style='padding:8px;border:1px solid #ddd;'><textarea style='width:100%;min-height:40px;' onchange='updateCardField(${card.id},"back",this.value)'>${card.back}</textarea></td>
-                        <td style='padding:8px;border:1px solid #ddd;'>${new Date(card.nextReview).toLocaleDateString()}</td>
-                        <td style='padding:8px;border:1px solid #ddd;'>${card.timesStudied}</td>
-                        <td style='padding:8px;border:1px solid #ddd;'><button onclick='deleteFlashcard(${card.id})' style='background:#e53e3e;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;'>Delete</button></td>
-                    </tr>`;
+                    // Populate bulk select options
+                    const bulkOptions = catList.map(c => `<option value='${c.id}'>${c.name}</option>`).join('');
+
+                    // Build rows with per-row category select (and Add New option)
+                    const catsMap = catList.reduce((m, c) => { m[c.id] = c.name; return m; }, {});
+                    allCards.forEach(card => {
+                        // Build options for this row's select
+                        let optionsHtml = "<option value=''" + ((card.categoryId === '' || !card.categoryId) ? ' selected' : '') + ">Uncategorized</option>";
+                        catList.forEach(c => {
+                            const sel = (c.id === card.categoryId) ? ' selected' : '';
+                            optionsHtml += `<option value='${c.id}'${sel}>${c.name}</option>`;
+                        });
+                        optionsHtml += "<option value='__add_new__'>Add New...</option>";
+
+                        tableHtml += `<tr>
+                            <td style='padding:8px;border:1px solid #ddd;text-align:center;'><input type='checkbox' class='rowSelect' data-id='${card.id}'/></td>
+                            <td style='padding:8px;border:1px solid #ddd;'>${card.videoTitle}</td>
+                            <td style='padding:8px;border:1px solid #ddd;'><div style="display:flex;gap:8px;align-items:center;"><select data-card-id='${card.id}' onchange='handleRowCategoryChange(${card.id}, this.value)' style='flex:1;padding:6px;border-radius:6px;border:1px solid #ccc;'>${optionsHtml}</select><div data-add-container='${card.id}'></div></div></td>
+                            <td style='padding:8px;border:1px solid #ddd;'><textarea id='front-${card.id}' style='width:100%;min-height:40px;' onchange='saveRowNow(${card.id})'>${card.front}</textarea></td>
+                            <td style='padding:8px;border:1px solid #ddd;'><textarea id='back-${card.id}' style='width:100%;min-height:40px;' onchange='saveRowNow(${card.id})'>${card.back}</textarea></td>
+                            <td style='padding:8px;border:1px solid #ddd;'>${card.nextReview ? new Date(card.nextReview).toLocaleDateString() : ''}</td>
+                            <td style='padding:8px;border:1px solid #ddd;'>${card.timesStudied || 0}</td>
+                            <td style='padding:8px;border:1px solid #ddd;display:flex;gap:8px;'><button onclick='deleteFlashcard(${card.id})' style='background:#e53e3e;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;'>Delete</button></td>
+                        </tr>`;
+                    });
+
+                    tableHtml += `</tbody></table>`;
+                    document.getElementById('flashcardTableContainer').innerHTML = tableHtml;
+
+                    // Inject bulk select options
+                    const bulkSelectEl = document.getElementById('bulkCategorySelect');
+                    if (bulkSelectEl) bulkSelectEl.insertAdjacentHTML('beforeend', bulkOptions);
+
+                    // Bind master checkbox and row checkbox handlers to ensure select-all works
+                    (function bindSelectionHandlers(){
+                        const master = document.getElementById('masterSelect');
+                        function updateMasterState(){
+                            const all = document.querySelectorAll('.rowSelect');
+                            const checked = document.querySelectorAll('.rowSelect:checked');
+                            if (!master) return;
+                            master.checked = (all.length > 0 && checked.length === all.length);
+                        }
+
+                        if (master) {
+                            // replace inline handler with robust listener
+                            master.removeAttribute('onchange');
+                            master.addEventListener('change', () => {
+                                const rows = document.querySelectorAll('.rowSelect');
+                                rows.forEach(r => { r.checked = master.checked; });
+                            });
+                        }
+
+                        const rows = document.querySelectorAll('.rowSelect');
+                        rows.forEach(r => r.addEventListener('change', updateMasterState));
+
+                        // initialize master checkbox state
+                        updateMasterState();
+                    })();
+                };
+                
+
+            // Toggle master select checkbox
+            function toggleMasterSelect(master) {
+                const rows = document.querySelectorAll('.rowSelect');
+                rows.forEach(r => { r.checked = master.checked; });
+                // If rows change later, ensure master reflects current state
+                rows.forEach(r => r.addEventListener('change', () => {
+                    const all = document.querySelectorAll('.rowSelect');
+                    const checked = document.querySelectorAll('.rowSelect:checked');
+                    const masterBox = document.getElementById('masterSelect');
+                    if (!masterBox) return;
+                    masterBox.checked = (all.length > 0 && checked.length === all.length);
+                }));
+            }
+
+            // Get selected card ids from the table
+            function getSelectedCardIds() {
+                const rows = document.querySelectorAll('.rowSelect:checked');
+                return Array.from(rows).map(r => parseInt(r.getAttribute('data-id'))).filter(Boolean);
+            }
+
+            // Bulk delete selected cards
+            function bulkDeleteSelected() {
+                const ids = getSelectedCardIds();
+                if (!ids || ids.length === 0) return alert('No cards selected');
+                if (!confirm(`Delete ${ids.length} selected cards? This cannot be undone.`)) return;
+
+                const tx = db.transaction(['flashcards'], 'readwrite');
+                const store = tx.objectStore('flashcards');
+                ids.forEach(id => store.delete(id));
+                tx.oncomplete = function() { showAllCards(); updateLibraryStats(); };
+            }
+
+            // Bulk change category for selected cards
+            function bulkChangeCategory() {
+                const ids = getSelectedCardIds();
+                if (!ids || ids.length === 0) return alert('No cards selected');
+                const sel = document.getElementById('bulkCategorySelect');
+                if (!sel) return;
+                const newCat = sel.value;
+
+                const tx = db.transaction(['flashcards'], 'readwrite');
+                const store = tx.objectStore('flashcards');
+                ids.forEach(id => {
+                    const req = store.get(id);
+                    req.onsuccess = function(evt) {
+                        const card = evt.target.result;
+                        if (!card) return;
+                        card.categoryId = newCat;
+                        store.put(card);
+                    };
                 });
-                tableHtml += `</tbody></table>`;
-                document.getElementById('flashcardTableContainer').innerHTML = tableHtml;
+                tx.oncomplete = function() { showAllCards(); };
+            }
+
+            // Handle per-row category select change
+            async function handleRowCategoryChange(cardId, value) {
+                if (!db) return;
+                const sel = document.querySelector(`select[data-card-id='${cardId}']`);
+                const addContainer = document.querySelector(`div[data-add-container='${cardId}']`);
+                if (value === '__add_new__') {
+                    // Build inline input UI inside addContainer
+                    if (!addContainer) return;
+                    addContainer.innerHTML = `<input data-new-input='${cardId}' placeholder='New category name' style='padding:6px;border:1px solid #ccc;border-radius:6px;' /><button data-new-add='${cardId}' style='background:#3182ce;color:white;border:none;padding:6px 8px;border-radius:6px;margin-left:6px;cursor:pointer;'>Add</button><button data-new-cancel='${cardId}' style='background:#a0aec0;color:white;border:none;padding:6px 8px;border-radius:6px;margin-left:6px;cursor:pointer;'>Cancel</button>`;
+
+                    // Attach handlers
+                    const input = addContainer.querySelector(`input[data-new-input='${cardId}']`);
+                    const addBtn = addContainer.querySelector(`button[data-new-add='${cardId}']`);
+                    const cancelBtn = addContainer.querySelector(`button[data-new-cancel='${cardId}']`);
+
+                    addBtn.addEventListener('click', async () => {
+                        const name = input.value && input.value.trim();
+                        if (!name) return alert('Enter a category name');
+                        const newCatId = await createCategoryFromPrompt(name);
+                        if (!newCatId) return alert('Could not create category');
+                        // update select to new value
+                        if (sel) sel.value = newCatId;
+                        // clear add UI
+                        addContainer.innerHTML = '';
+                        // save change
+                        await saveRowNow(cardId);
+                    });
+
+                    cancelBtn.addEventListener('click', () => {
+                        // Reset selection back to previous (uncategorized)
+                        if (sel) sel.value = '';
+                        addContainer.innerHTML = '';
+                    });
+
+                    return; // wait for user to click Add
+                }
+
+                // Immediately update card's categoryId (autosave)
+                const tx = db.transaction(['flashcards'], 'readwrite');
+                const store = tx.objectStore('flashcards');
+                const req = store.get(cardId);
+                req.onsuccess = function(evt) {
+                    const card = evt.target.result;
+                    if (!card) return;
+                    // coerce numeric ids where appropriate
+                    if (value === '' || value === null) card.categoryId = '';
+                    else if (value === '__add_new__') {
+                        // handled above
+                        return;
+                    } else {
+                        const parsed = parseInt(value);
+                        card.categoryId = isNaN(parsed) ? value : parsed;
+                    }
+                    store.put(card);
+                };
+                tx.oncomplete = function() {
+                    // no full refresh needed; keep modal open
+                };
+            }
+
+            // Create a new category in the DB and return its id
+            function createCategoryFromPrompt(name) {
+                return new Promise((resolve) => {
+                    if (!db) return resolve(null);
+                    const tx = db.transaction(['categories'], 'readwrite');
+                    const store = tx.objectStore('categories');
+                    const addReq = store.add({ name });
+                    addReq.onsuccess = function(evt) {
+                        resolve(evt.target.result);
+                    };
+                    addReq.onerror = function(evt) {
+                        // If duplicate name, try to find existing id
+                        const getReq = store.index('name').get(name);
+                        getReq.onsuccess = function(e) {
+                            resolve(e.target.result ? e.target.result.id : null);
+                        };
+                        getReq.onerror = function() { resolve(null); };
+                    };
+                });
+            }
+
+            // Save row now: writes front/back/category to DB for given cardId
+            function saveRowNow(cardId) {
+                if (!db) return;
+                const frontEl = document.getElementById(`front-${cardId}`);
+                const backEl = document.getElementById(`back-${cardId}`);
+                const sel = document.querySelector(`select[data-card-id='${cardId}']`);
+                const front = frontEl ? frontEl.value : '';
+                const back = backEl ? backEl.value : '';
+                const rawCat = sel ? sel.value : '';
+                const categoryId = (rawCat === '' || rawCat === null) ? '' : (rawCat === '__add_new__' ? '' : (isNaN(parseInt(rawCat)) ? rawCat : parseInt(rawCat)));
+
+                const tx = db.transaction(['flashcards'], 'readwrite');
+                const store = tx.objectStore('flashcards');
+                const req = store.get(cardId);
+                req.onsuccess = function(evt) {
+                    const card = evt.target.result || { id: cardId };
+                    card.front = front;
+                    card.back = back;
+                    card.categoryId = categoryId;
+                    store.put(card);
+                };
+                tx.oncomplete = function() {
+                    // Optionally: show a small saved indicator
+                    const rowFront = document.getElementById(`front-${cardId}`);
+                    if (rowFront) {
+                        rowFront.style.outline = '2px solid #9AE6B4';
+                        setTimeout(() => rowFront.style.outline = '', 800);
+                    }
+                };
+            }
             };
         }
 
@@ -2199,6 +2606,8 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             } else {
                 console.error('Test button not found!');
             }
+            // Load categories into selector
+            setTimeout(() => loadCategories(), 300);
         });
 
         // Initialize
