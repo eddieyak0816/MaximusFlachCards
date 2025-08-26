@@ -289,6 +289,13 @@
             request.onsuccess = function(event) {
                 db = event.target.result;
                 console.log('Database initialized successfully');
+
+                // Safe post-init: update dashboard and load category UI now that db is set
+                try { updateDashboard(); } catch (e) { console.error(e); }
+                try { loadCategories(); } catch (e) { console.error(e); }
+                try { refreshAllCategorySelects(); } catch (e) { console.error(e); }
+                try { refreshCategoryReviewPanel(); } catch (e) { console.error(e); }
+                try { loadSavedApiKeys(); } catch (e) { /* non-fatal */ }
             };
             
             request.onupgradeneeded = function(event) {
@@ -3529,13 +3536,49 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             const bIdx = header.indexOf('back');
             const cIdx = header.indexOf('category');
             if (fIdx===-1 || bIdx===-1) throw new Error('Missing required columns front/back');
-            const tx = db.transaction(['flashcards'],'readwrite');
-            const store = tx.objectStore('flashcards');
+            // Build list of unique category names from the CSV (case-normalized)
+            const categoryNames = new Set();
+            const importedRows = [];
             for (let i=1;i<rows.length;i++){
-                const r=rows[i];
-                const item = { front: r[fIdx]||'', back: r[bIdx]||'', categoryName: (cIdx!==-1? r[cIdx]||'':''), createdAt: new Date().toISOString() };
-                store.add(item);
+                const r = rows[i];
+                const catName = (cIdx!==-1 ? (r[cIdx]||'').trim() : '');
+                const norm = catName ? catName : '';
+                if (norm) categoryNames.add(norm);
+                importedRows.push({ front: r[fIdx]||'', back: r[bIdx]||'', categoryName: norm });
             }
+
+            // Resolve existing categories and create missing ones. Build a map lowercaseName->id to match case-insensitively
+            const nameToId = {};
+            const catTx = db.transaction(['categories'], 'readwrite');
+            const catStore = catTx.objectStore('categories');
+
+            // Load existing categories first
+            const existing = await new Promise(res => { const req = catStore.getAll(); req.onsuccess = () => res(req.result||[]); req.onerror = () => res([]); });
+            existing.forEach(c => { if (c && c.name) nameToId[String(c.name).trim().toLowerCase()] = c.id; });
+
+            // For each imported category name not found, create it
+            for (const rawName of categoryNames) {
+                if (!rawName) continue;
+                const lower = String(rawName).trim().toLowerCase();
+                if (nameToId[lower]) continue;
+                try {
+                    const addReq = catStore.add({ name: rawName, newCardsPerDay: null, reviewCardsPerDay: null });
+                    const id = await new Promise((res, rej) => { addReq.onsuccess = (e) => res(e.target.result); addReq.onerror = () => { /* try to lookup by name if duplicate */ const getReq = catStore.index('name').get(rawName); getReq.onsuccess = () => res(getReq.result ? getReq.result.id : null); getReq.onerror = () => res(null); }; });
+                    if (id) nameToId[lower] = id;
+                } catch (e) {
+                    console.error('Error creating category', rawName, e);
+                }
+            }
+
+            // Now insert flashcards with categoryId set (numeric id) or '' for uncategorized
+            const tx = db.transaction(['flashcards'], 'readwrite');
+            const store = tx.objectStore('flashcards');
+            importedRows.forEach(row => {
+                const cid = row.categoryName ? (nameToId[String(row.categoryName).trim().toLowerCase()] || '') : '';
+                const item = { front: row.front, back: row.back, categoryId: cid, createdAt: new Date().toISOString(), nextReview: new Date().toISOString(), interval:1, easeFactor:2.5, repetitions:0, timesStudied:0 };
+                store.add(item);
+            });
+
             return new Promise((res,rej)=>{ tx.oncomplete = ()=>res(true); tx.onerror = ()=>rej(tx.error); });
         }
 
