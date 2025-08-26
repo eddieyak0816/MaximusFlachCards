@@ -1361,10 +1361,12 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 modal.style.zIndex = '10000';
                 modal.style.display = 'flex';
                 modal.style.justifyContent = 'center';
-                modal.style.alignItems = 'center';
+                // Align to top so the dialog can scroll on small screens
+                modal.style.alignItems = 'flex-start';
+                modal.style.paddingTop = '28px';
                 const globals = getGlobalLimits();
                 modal.innerHTML = `
-                    <div style="background:white;max-width:700px;width:95vw;border-radius:12px;padding:20px;">
+                    <div style="background:white;max-width:700px;width:95vw;border-radius:12px;padding:20px;box-sizing:border-box;max-height:calc(100vh - 56px);overflow-y:auto;-webkit-overflow-scrolling:touch;">
                         <h2 style="font-size:1.25rem;margin-bottom:8px;">Manage Categories</h2>
                         <div style='display:flex;gap:12px;align-items:center;margin-bottom:10px;'>
                             <div style='font-size:0.95rem;'>Global defaults:</div>
