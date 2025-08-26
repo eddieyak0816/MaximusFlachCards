@@ -1317,6 +1317,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 document.getElementById('newCategoryName').value = '';
                 refreshCategoryManager();
                 loadCategories();
+                // update all selects immediately
+                refreshAllCategorySelects();
             };
             req.onerror = function(e) {
                 alert('Error adding category: ' + e.target.error);
@@ -1336,6 +1338,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 store.put(cat).onsuccess = function() {
                     refreshCategoryManager();
                     loadCategories();
+                    refreshAllCategorySelects();
                 };
             };
         }
@@ -1347,6 +1350,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             store.delete(id).onsuccess = function() {
                 refreshCategoryManager();
                 loadCategories();
+                refreshAllCategorySelects();
             };
         }
 
@@ -1366,6 +1370,58 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     opt.value = cat.id;
                     opt.textContent = cat.name;
                     select.appendChild(opt);
+                });
+            };
+        }
+
+        // Refresh all category <select> elements across the UI (main form, bulk select, per-row selects, edit modal)
+        function refreshAllCategorySelects() {
+            if (!db) return;
+            const tx = db.transaction(['categories'], 'readonly');
+            const store = tx.objectStore('categories');
+            const req = store.getAll();
+            req.onsuccess = function() {
+                const cats = req.result || [];
+
+                // Helper to build option elements (keeps first 'Uncategorized')
+                function rebuildSelect(sel, includeAddNew) {
+                    if (!sel) return;
+                    const previous = sel.value;
+                    sel.innerHTML = '';
+                    const unc = document.createElement('option');
+                    unc.value = '';
+                    unc.textContent = 'Uncategorized';
+                    sel.appendChild(unc);
+                    cats.forEach(c => {
+                        const o = document.createElement('option');
+                        o.value = c.id;
+                        o.textContent = c.name;
+                        sel.appendChild(o);
+                    });
+                    if (includeAddNew) {
+                        const addOpt = document.createElement('option');
+                        addOpt.value = '__add_new__';
+                        addOpt.textContent = 'Add New...';
+                        sel.appendChild(addOpt);
+                    }
+                    // try to restore previous selection
+                    try { sel.value = previous; } catch (e) { /* ignore */ }
+                }
+
+                // Main category select on Step 1
+                rebuildSelect(document.getElementById('categorySelect'), false);
+
+                // Bulk category select in All Cards modal
+                rebuildSelect(document.getElementById('bulkCategorySelect'), false);
+
+                // Edit modal select
+                rebuildSelect(document.getElementById('editCategorySelect'), true);
+
+                // Any per-row selects inside the All Cards table (they use data-card-id)
+                document.querySelectorAll("select[data-card-id]").forEach(sel => {
+                    // include Add New if the select previously had that option
+                    const hadAdd = sel.querySelector("option[value='__add_new__']") !== null;
+                    rebuildSelect(sel, hadAdd);
                 });
             };
         }
@@ -2153,6 +2209,17 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             });
         }
 
+        // Helper: format date as MM/DD/YY
+        function formatShortDate(d) {
+            if (!d) return '';
+            const dt = new Date(d);
+            if (isNaN(dt)) return '';
+            const mm = String(dt.getMonth() + 1).padStart(2, '0');
+            const dd = String(dt.getDate()).padStart(2, '0');
+            const yy = String(dt.getFullYear()).slice(-2);
+            return `${mm}/${dd}/${yy}`;
+        }
+
         // Show all cards in a modal table for editing/deleting
     function showAllCards() {
             if (!db) {
@@ -2169,20 +2236,20 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                     return;
                 }
                 let modal = document.getElementById('flashcardModal');
-                if (!modal) {
+                    if (!modal) {
                     modal = document.createElement('div');
                     modal.id = 'flashcardModal';
                     modal.style.position = 'fixed';
                     modal.style.top = '0';
                     modal.style.left = '0';
-                    modal.style.width = '100vw';
-                    modal.style.height = '100vh';
+                        modal.style.width = '100vw';
+                        modal.style.height = '100vh';
                     modal.style.background = 'rgba(0,0,0,0.6)';
                     modal.style.zIndex = '9999';
                     modal.style.display = 'flex';
                     modal.style.justifyContent = 'center';
                     modal.style.alignItems = 'center';
-                    modal.innerHTML = `<div id="modalContent" style="background:white;max-width:900px;width:95vw;max-height:90vh;overflow:auto;border-radius:16px;padding:32px;box-shadow:0 8px 32px #0003;">
+                    modal.innerHTML = `<div id="modalContent" style="background:white;max-width:1200px;width:96vw;max-height:90vh;overflow:auto;border-radius:16px;padding:32px;box-shadow:0 8px 32px #0003;">
                         <h2 style="font-size:2rem;font-weight:bold;margin-bottom:1rem;">All Flashcards</h2>
                         <button onclick="document.getElementById('flashcardModal').remove()" style="position:absolute;top:24px;right:40px;font-size:1.5rem;background:#eee;border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;">&times;</button>
                         <div id="flashcardTableContainer"></div>
@@ -2211,13 +2278,12 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                     <thead>
                         <tr style='background:#f3f3f3;'>
                                 <th style='padding:8px;border:1px solid #ddd;width:36px;text-align:center;'><input type='checkbox' id='masterSelect' onchange='toggleMasterSelect(this)'/></th>
-                            <th style='padding:8px;border:1px solid #ddd;'>Video Title</th>
                             <th style='padding:8px;border:1px solid #ddd;'>Category</th>
-                            <th style='padding:8px;border:1px solid #ddd;'>Front</th>
-                            <th style='padding:8px;border:1px solid #ddd;'>Back</th>
+                            <th style='padding:8px;border:1px solid #ddd;width:35%;'>Front</th>
+                            <th style='padding:8px;border:1px solid #ddd;width:35%;'>Back</th>
                             <th style='padding:8px;border:1px solid #ddd;'>Next Review</th>
-                            <th style='padding:8px;border:1px solid #ddd;'>Times Studied</th>
-                            <th style='padding:8px;border:1px solid #ddd;'>Actions</th>
+                            <th style='padding:8px;border:1px solid #ddd;width:80px;text-align:center;'>Times Studied</th>
+                            <th style='padding:8px;border:1px solid #ddd;width:80px;text-align:center;'>Actions</th>
                         </tr>
                     </thead>
                     <tbody>`;
@@ -2239,13 +2305,19 @@ Be specific - reference actual content from the transcript. Keep under 200 words
 
                         tableHtml += `<tr>
                             <td style='padding:8px;border:1px solid #ddd;text-align:center;'><input type='checkbox' class='rowSelect' data-id='${card.id}'/></td>
-                            <td style='padding:8px;border:1px solid #ddd;'>${card.videoTitle}</td>
-                            <td style='padding:8px;border:1px solid #ddd;'><div style="display:flex;gap:8px;align-items:center;"><select data-card-id='${card.id}' onchange='handleRowCategoryChange(${card.id}, this.value)' style='flex:1;padding:6px;border-radius:6px;border:1px solid #ccc;'>${optionsHtml}</select><div data-add-container='${card.id}'></div></div></td>
-                            <td style='padding:8px;border:1px solid #ddd;'><textarea id='front-${card.id}' style='width:100%;min-height:40px;' onchange='saveRowNow(${card.id})'>${card.front}</textarea></td>
-                            <td style='padding:8px;border:1px solid #ddd;'><textarea id='back-${card.id}' style='width:100%;min-height:40px;' onchange='saveRowNow(${card.id})'>${card.back}</textarea></td>
-                            <td style='padding:8px;border:1px solid #ddd;'>${card.nextReview ? new Date(card.nextReview).toLocaleDateString() : ''}</td>
-                            <td style='padding:8px;border:1px solid #ddd;'>${card.timesStudied || 0}</td>
-                            <td style='padding:8px;border:1px solid #ddd;display:flex;gap:8px;'><button onclick='openEditCardModal(${card.id})' style='background:#4a5568;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;'>Edit</button><button onclick='deleteFlashcard(${card.id})' style='background:#e53e3e;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;'>Delete</button></td>
+                            <td style='padding:8px;border:1px solid #ddd;vertical-align:top;'><div style="display:flex;gap:8px;align-items:center;"><select data-card-id='${card.id}' onchange='handleRowCategoryChange(${card.id}, this.value)' style='flex:1;padding:6px;border-radius:6px;border:1px solid #ccc;'>${optionsHtml}</select><div data-add-container='${card.id}'></div></div></td>
+                            <td style='padding:8px;border:1px solid #ddd;vertical-align:top;'><textarea id='front-${card.id}' style='width:100%;min-height:120px;resize:vertical;padding:8px;border-radius:6px;border:1px solid #ddd;' onchange='saveRowNow(${card.id})'>${card.front}</textarea></td>
+                            <td style='padding:8px;border:1px solid #ddd;vertical-align:top;'><textarea id='back-${card.id}' style='width:100%;min-height:120px;resize:vertical;padding:8px;border-radius:6px;border:1px solid #ddd;' onchange='saveRowNow(${card.id})'>${card.back}</textarea></td>
+                            <td style='padding:8px;border:1px solid #ddd;'>${card.nextReview ? formatShortDate(card.nextReview) : ''}</td>
+                            <td style='padding:8px;border:1px solid #ddd;text-align:center;'>${card.timesStudied || 0}</td>
+                            <td style='padding:8px;border:1px solid #ddd;text-align:center;'>
+                                <button onclick='openEditCardModal(${card.id})' title='Edit' style='background:transparent;border:none;padding:4px;cursor:pointer;'>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4a5568" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+                                </button>
+                                <button onclick='deleteFlashcard(${card.id})' title='Delete' style='background:transparent;border:none;padding:4px;cursor:pointer;margin-left:6px;'>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e53e3e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                </button>
+                            </td>
                         </tr>`;
                     });
 
@@ -2409,13 +2481,17 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                     const store = tx.objectStore('categories');
                     const addReq = store.add({ name });
                     addReq.onsuccess = function(evt) {
-                        resolve(evt.target.result);
+                            // update selects immediately
+                            setTimeout(() => { try { refreshAllCategorySelects(); } catch(e){} }, 10);
+                            resolve(evt.target.result);
                     };
                     addReq.onerror = function(evt) {
                         // If duplicate name, try to find existing id
                         const getReq = store.index('name').get(name);
                         getReq.onsuccess = function(e) {
-                            resolve(e.target.result ? e.target.result.id : null);
+                                // refresh selects too (name already exists)
+                                setTimeout(() => { try { refreshAllCategorySelects(); } catch(e){} }, 10);
+                                resolve(e.target.result ? e.target.result.id : null);
                         };
                         getReq.onerror = function() { resolve(null); };
                     };
