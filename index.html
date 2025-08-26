@@ -1377,6 +1377,55 @@ Make sure each flashcard tests something specific from the transcript content.`;
             };
         }
 
+        // --- Text-to-Speech helpers (card-level audio) ---
+        function stopSpeech() {
+            try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+        }
+
+        function speakTextWithOptions(text, opts) {
+            if (!text || !text.trim()) return;
+            if (!('speechSynthesis' in window)) {
+                alert('Text-to-speech not supported in this browser');
+                return;
+            }
+            stopSpeech();
+            const utter = new SpeechSynthesisUtterance(String(text));
+            utter.rate = (opts && opts.rate) ? opts.rate : 1;
+            utter.pitch = (opts && opts.pitch) ? opts.pitch : 1;
+            utter.lang = (opts && opts.lang) ? opts.lang : (navigator.language || 'en-US');
+            window.speechSynthesis.speak(utter);
+            return utter;
+        }
+
+        // Play front text, then play back text after front finishes (if provided)
+        function playCardSequential(front, back) {
+            if (!front && !back) return;
+            if (!('speechSynthesis' in window)) { alert('TTS not supported in this browser'); return; }
+            stopSpeech();
+            const first = new SpeechSynthesisUtterance(String(front || ''));
+            first.rate = 1;
+            first.pitch = 1;
+            first.lang = navigator.language || 'en-US';
+            first.onend = function() {
+                if (back && back.trim()) {
+                    const second = new SpeechSynthesisUtterance(String(back));
+                    second.rate = 1; second.pitch = 1; second.lang = navigator.language || 'en-US';
+                    window.speechSynthesis.speak(second);
+                }
+            };
+            window.speechSynthesis.speak(first);
+        }
+
+        // Play only front or only back
+        function playCardText(text) { speakTextWithOptions(text); }
+
+        // Escape string for embedding inside backtick template literal in HTML attributes
+        function escapeJs(str) {
+            if (str === undefined || str === null) return '';
+            return String(str).replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+        }
+
+
         // Return the pacing preset object for a categoryId (falls back to null)
         function getCategoryPreset(categoryId) {
             if (!db) return null;
@@ -2464,12 +2513,21 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                     <div id="cardContent">
                         <div id="cardFront" class="card-side">
                             <div class="text-lg font-semibold text-gray-800 mb-4">${card.front || ''}</div>
+                            <div class="mb-3">
+                                <button onclick="playCardText(\`${escapeJs(card.front || '')}\`)" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Question</button>
+                                <button onclick="stopSpeech()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
+                            </div>
                             <div>
                                 <button onclick="flipCard()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">Show Answer</button>
                             </div>
                         </div>
                         <div id="cardBack" class="card-side hidden">
                             <div class="text-lg font-semibold text-gray-800 mb-4">${card.back || ''}</div>
+                            <div class="mb-3">
+                                <button onclick="playCardText(\`${escapeJs(card.back || '')}\`)" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Answer</button>
+                                <button onclick="playCardSequential(\`${escapeJs(card.front || '')}\`, \`${escapeJs(card.back || '')}\`)" class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded text-sm mr-2">🔁 Play Q→A</button>
+                                <button onclick="stopSpeech()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
+                            </div>
                             <div class="flex justify-center space-x-3 mt-4">
                                 <button onclick="rateCard('hard')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">😰 Hard <span class="ml-2 text-xs">${getProjectedLabel(card,'hard')}</span></button>
                                 <button onclick="rateCard('medium')" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm">🤔 Medium <span class="ml-2 text-xs">${getProjectedLabel(card,'medium')}</span></button>
