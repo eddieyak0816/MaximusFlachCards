@@ -2298,34 +2298,27 @@ Make sure each flashcard tests something specific from the transcript content.`;
         // Generate REAL AI feedback that compares student response to transcript
         async function generateRealAIFeedback(questionIndex, response, videoData) {
             const geminiKey = localStorage.getItem('gemini_api_key');
-            
+
             if (!geminiKey) {
                 return generateFallbackFeedback(questionIndex, response, videoData);
             }
 
-            const questions = [
-                'Tell me everything you can remember about the video',
-                'What was the main point or key takeaway from the video?',
-                'Can you remember any specific examples, numbers, or details that were mentioned?',
-                'How does this connect to what you already knew about the topic?'
-            ];
+            // Read saved tone (default to warm coach-like)
+            const savedTone = localStorage.getItem('aiFeedbackTone') || 'warm';
+            let toneInstruction = 'Use a warm, coach-like voice: kind, encouraging, patient, and gently optimistic.';
+            if (savedTone === 'concise') {
+                toneInstruction = 'Be concise and neutral: brief praise, clear correction, then one short practice instruction.';
+            } else if (savedTone === 'direct') {
+                toneInstruction = 'Be direct and focused: highlight the key missing fact quickly, then give one practice step.';
+            }
 
-            const prompt = `You are an AI learning coach analyzing a student's recall against actual video content.
+            // Guidance for active-recall hints: two graduated hints + one leading question, do NOT reveal the full answer.
+            const hintGuidance = `After a short praise and a single correction, give two hints that prompt recall (first broad, second more specific) without stating the missing detail. Then ask one short leading question to nudge retrieval. Finish with a single micro-practice instruction (e.g., 'Try to recall this in 60s without looking'). Keep overall reply concise.`;
 
-QUESTION ASKED: "${questions[questionIndex]}"
+            // Build prompt with context. Keep it short and focused; the model should not output long explanations.
+            const transcriptSnippet = (videoData && videoData.transcript) ? `Transcript excerpt: ${videoData.transcript}` : 'Transcript: (use available transcript to check details)';
 
-STUDENT'S RESPONSE: "${response}"
-
-ACTUAL VIDEO TRANSCRIPT: "${videoData.transcript}"
-
-TASK: Compare what the student remembered vs what was actually in the video. Provide specific feedback on:
-
-1. What they remembered CORRECTLY from the transcript
-2. Important points from the transcript they MISSED
-3. Any inaccuracies in their recall
-4. Encouraging suggestions for better retention
-
-Be specific - reference actual content from the transcript. Keep under 200 words. Use encouraging tone with emojis.`;
+            const prompt = `${toneInstruction} ${hintGuidance}\n\nStudent answer: "${response}"\n\n${transcriptSnippet}\n\nCompare the student's answer to the transcript. Produce, in plain short sentences addressed to the student (speak as "you"): 1) one brief praise sentence about what you remembered correctly; 2) one short correction or important missing point (keep it minimal); 3) two hints to help you retrieve the detail without giving it away (broad -> specific); 4) one short leading question to prompt recall; 5) one micro-practice instruction the student can do in under 1 minute. Keep output under ~200 words and do NOT print numbered lists in the final answer.`;
 
             try {
                 const response_ai = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
@@ -2335,31 +2328,31 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                     },
                     body: JSON.stringify({
                         contents: [{
-                            parts: [{
-                                text: prompt
-                            }]
+                            parts: [{ text: prompt }]
                         }],
                         generationConfig: {
-                            temperature: 0.7,
+                            temperature: 0.6,
                             topK: 40,
-                            topP: 0.95,
-                            maxOutputTokens: 2048
+                            topP: 0.9,
+                            maxOutputTokens: 300
                         }
                     })
                 });
 
                 if (response_ai.ok) {
                     const data = await response_ai.json();
-                    const feedback = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                    
+                    let feedback = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                    // Safety: trim to ~600 chars if model returned longer text
+                    if (feedback.length > 600) feedback = feedback.slice(0, 597) + '...';
                     if (feedback) {
+                        // Wrap in a compact, personal tile with hint-focused styling
                         return `
-                            <div class="bg-gradient-to-r from-purple-50 to-blue-50 border-l-4 border-purple-400 p-4 rounded">
-                                <div class="flex items-start mb-3">
+                            <div class="bg-gradient-to-r from-purple-50 to-blue-50 border-l-4 border-purple-400 p-3 rounded">
+                                <div class="flex items-start">
                                     <div class="text-2xl mr-3">🤖</div>
                                     <div>
-                                        <h4 class="font-semibold text-purple-800 mb-2">AI Analysis: Your Recall vs Actual Content</h4>
-                                        <div class="text-purple-700 text-sm">${feedback}</div>
+                                        <div class="font-semibold text-purple-800 mb-1">Coach:</div>
+                                        <div class="text-purple-700 text-sm">${escapeHtml(feedback)}</div>
                                     </div>
                                 </div>
                             </div>
@@ -2375,14 +2368,22 @@ Be specific - reference actual content from the transcript. Keep under 200 words
 
         // Fallback feedback when AI is not available
         function generateFallbackFeedback(questionIndex, response, videoData) {
+            // Warm, hint-focused fallback from Coach
+            const praise = 'Good job — you picked up some important points.';
+            const correction = 'One small gap: try to recall a concrete example mentioned in the video.';
+            const hint1 = 'Hint 1: Think about the example used when the speaker discussed real-world applications.';
+            const hint2 = 'Hint 2: It included a specific number or year that anchors the example.';
+            const leading = 'Question: What was the real-world example used?';
+            const micro = 'Micro-practice: spend 45–60 seconds trying to recall just that example before checking.';
+
+            const combined = `${praise} ${correction} ${hint1} ${hint2} ${leading} ${micro}`;
             return `
-                <div class="bg-gradient-to-r from-green-50 to-blue-50 border-l-4 border-green-400 p-4 rounded">
-                    <div class="flex items-start mb-3">
+                <div class="bg-gradient-to-r from-green-50 to-blue-50 border-l-4 border-green-400 p-3 rounded">
+                    <div class="flex items-start">
                         <div class="text-2xl mr-3">🌟</div>
                         <div>
-                            <h4 class="font-semibold text-green-800 mb-2">Great engagement with the material!</h4>
-                            <p class="text-green-700 text-sm mb-1">✅ You're actively recalling information and making connections!</p>
-                            <p class="text-green-700 text-sm">💡 AI analysis requires API key - using basic feedback instead.</p>
+                            <div class="font-semibold text-green-800 mb-1">Coach:</div>
+                            <div class="text-green-700 text-sm">${escapeHtml(combined)}</div>
                         </div>
                     </div>
                 </div>
@@ -2547,6 +2548,11 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                                 <label style="margin-right:8px;">Voice: <select id="voiceSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:180px;"></select></label>
                                 <label style="margin-left:8px;">Rate: <span id="voiceRateLabel" style="font-weight:600;">1</span> <input id="voiceRate" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:120px;margin-left:6px;"/></label>
                                 <label style="margin-left:8px;">Pitch: <span id="voicePitchLabel" style="font-weight:600;">1</span> <input id="voicePitch" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:120px;margin-left:6px;"/></label>
+                                <label style="margin-left:8px;">AI Tone: <select id="aiToneSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:160px;">
+                                    <option value="warm">Warm (default)</option>
+                                    <option value="concise">Concise</option>
+                                    <option value="direct">Direct</option>
+                                </select></label>
                             </div>
                             <div>
                                 <button onclick="flipCard()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">Show Answer</button>
@@ -2563,6 +2569,11 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                                 <label style="margin-right:8px;">Voice: <select id="voiceSelectBack" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:180px;"></select></label>
                                 <label style="margin-left:8px;">Rate: <span id="voiceRateLabelBack" style="font-weight:600;">1</span> <input id="voiceRateBack" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:120px;margin-left:6px;"/></label>
                                 <label style="margin-left:8px;">Pitch: <span id="voicePitchLabelBack" style="font-weight:600;">1</span> <input id="voicePitchBack" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:120px;margin-left:6px;"/></label>
+                                <label style="margin-left:8px;">AI Tone: <select id="aiToneSelectBack" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:160px;">
+                                    <option value="warm">Warm (default)</option>
+                                    <option value="concise">Concise</option>
+                                    <option value="direct">Direct</option>
+                                </select></label>
                             </div>
                             <div class="flex justify-center space-x-3 mt-4">
                                 <button onclick="rateCard('hard')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">😰 Hard <span class="ml-2 text-xs">${getProjectedLabel(card,'hard')}</span></button>
@@ -2645,6 +2656,12 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             const saved = localStorage.getItem('ttsVoice');
             if (saved) try { if (sel) sel.value = saved; if (selBack) selBack.value = saved; } catch(e) {}
 
+            // restore saved AI tone if any
+            const aiToneSel = document.getElementById('aiToneSelect');
+            const aiToneSelBack = document.getElementById('aiToneSelectBack');
+            const savedTone = localStorage.getItem('aiFeedbackTone') || 'warm';
+            try { if (aiToneSel) aiToneSel.value = savedTone; if (aiToneSelBack) aiToneSelBack.value = savedTone; } catch(e) {}
+
             // wire change handlers to persist settings
             if (sel) sel.onchange = function() { localStorage.setItem('ttsVoice', sel.value || ''); };
             if (selBack) selBack.onchange = function() { localStorage.setItem('ttsVoice', selBack.value || ''); };
@@ -2677,6 +2694,40 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                 pitchElBack.oninput = function() { localStorage.setItem('ttsPitch', pitchElBack.value); document.getElementById('voicePitchLabelBack') && (document.getElementById('voicePitchLabelBack').textContent = pitchElBack.value); if (pitchEl) pitchEl.value = pitchElBack.value; };
                 document.getElementById('voicePitchLabelBack') && (document.getElementById('voicePitchLabelBack').textContent = pitchElBack.value);
             }
+            // wire AI tone selects
+            if (aiToneSel) {
+                aiToneSel.onchange = function() {
+                    try { localStorage.setItem('aiFeedbackTone', aiToneSel.value || 'warm'); if (aiToneSelBack) aiToneSelBack.value = aiToneSel.value; } catch(e) {}
+                };
+            }
+            if (aiToneSelBack) {
+                aiToneSelBack.onchange = function() {
+                    try { localStorage.setItem('aiFeedbackTone', aiToneSelBack.value || 'warm'); if (aiToneSel) aiToneSel.value = aiToneSelBack.value; } catch(e) {}
+                };
+            }
+        }
+
+        // Ensure voices are loaded, using voiceschanged event or polling as a fallback
+        function ensureVoicesLoaded(timeoutMs = 1500) {
+            return new Promise((resolve) => {
+                if (!('speechSynthesis' in window)) return resolve([]);
+                let voices = window.speechSynthesis.getVoices() || [];
+                if (voices.length > 0) return resolve(voices);
+
+                let resolved = false;
+                function done() { if (resolved) return; resolved = true; voices = window.speechSynthesis.getVoices() || []; resolve(voices); }
+
+                const onChange = function() { done(); };
+                window.speechSynthesis.addEventListener('voiceschanged', onChange, { once: true });
+
+                // fallback polling
+                const start = Date.now();
+                const iv = setInterval(() => {
+                    const v = window.speechSynthesis.getVoices() || [];
+                    if (v.length > 0) { clearInterval(iv); done(); }
+                    if (Date.now() - start > timeoutMs) { clearInterval(iv); done(); }
+                }, 100);
+            });
         }
 
         function flipCard() {
@@ -2859,6 +2910,10 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                 try { refreshAllCategorySelects(); } catch (e) { /* ignore */ }
                 try { refreshCategoryReviewPanel(); } catch (e) { /* ignore */ }
             }, 500);
+            // Load TTS voices early (populate when available)
+            try {
+                ensureVoicesLoaded(2000).then(() => { try { populateVoiceList(); } catch(e){} });
+            } catch(e) {}
         }
 
         // Update dashboard statistics
@@ -3792,7 +3847,7 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                 });
                 const csv = lines.join('\n');
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                const filename = `maximus_flashcards_backup_${new Date().toISOString().slice(0,10)}.csv`;
+                const filename = `flashcards_backup_${new Date().toISOString().slice(0,10)}.csv`;
                 if (promptDownload) {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
