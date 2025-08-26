@@ -2589,6 +2589,9 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             setTimeout(() => {
                 updateDashboard();
                 loadCategories();
+                // Ensure all category-related UI is refreshed on startup
+                try { refreshAllCategorySelects(); } catch (e) { /* ignore */ }
+                try { refreshCategoryReviewPanel(); } catch (e) { /* ignore */ }
             }, 500);
         }
 
@@ -3436,8 +3439,10 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             } else {
                 console.error('Test button not found!');
             }
-            // Load categories into selector
-            setTimeout(() => loadCategories(), 300);
+            // Load categories into selector and refresh category UI immediately
+            try { loadCategories(); } catch (e) { /* ignore */ }
+            try { refreshAllCategorySelects(); } catch (e) { /* ignore */ }
+            try { refreshCategoryReviewPanel(); } catch (e) { /* ignore */ }
         });
 
         // Initialize
