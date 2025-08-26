@@ -505,41 +505,12 @@
 
             // Save to DB if available and not already saved
             if (db && flashcards.length > 0) {
-                // Load existing categories to help auto-assign category IDs
-                const categories = await new Promise(resolve => {
-                    const tx = db.transaction(['categories'], 'readonly');
-                    const store = tx.objectStore('categories');
-                    const req = store.getAll();
-                    req.onsuccess = () => resolve(req.result || []);
-                    req.onerror = () => resolve([]);
-                });
-
-                // Track suggestions to compute most common suggestion
-                const suggestionCounts = {};
-
-                flashcards.forEach(flashcard => {
-                    // Determine a best-fit category from existing categories; fallback to uncategorized ('')
-                    try {
-                        const catId = determineCategoryId(flashcard, categories) || '';
-                        flashcard.categoryId = catId;
-                        suggestionCounts[catId] = (suggestionCounts[catId] || 0) + 1;
-                    } catch (e) {
-                        flashcard.categoryId = '';
-                        suggestionCounts[''] = (suggestionCounts[''] || 0) + 1;
-                    }
-                    saveFlashcard(flashcard, videoData);
-                });
-
-                // Compute most suggested category
-                const entries = Object.entries(suggestionCounts);
-                if (entries.length > 0) {
-                    entries.sort((a,b) => b[1] - a[1]);
-                    const topId = entries[0][0];
-                    const topCount = entries[0][1];
-                    const topCat = categories.find(c => String(c.id) === String(topId));
-                    const topName = topCat ? topCat.name : (topId === '' ? 'Uncategorized' : 'Unknown');
-                    // Show suggestion to the user
-                    try { showCategorySuggestion(topId, topName, topCount); } catch (e) { console.error(e); }
+                try {
+                    flashcards.forEach(flashcard => {
+                        try { saveFlashcard(flashcard, videoData); } catch (e) { console.error('Error saving generated flashcard:', e); }
+                    });
+                } catch (e) {
+                    console.error('Error iterating generated flashcards:', e);
                 }
             }
 
@@ -1324,36 +1295,104 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 console.error('Database not initialized');
                 return;
             }
-            
-            const transaction = db.transaction(['flashcards'], 'readwrite');
-            const store = transaction.objectStore('flashcards');
-            
-            const flashcardData = {
-                front: flashcard.front,
-                back: flashcard.back,
-                videoTitle: videoData.title,
-                videoUrl: videoData.url,
-                subject: videoData.subject,
-                // Prefer category set on the flashcard object (e.g. AI-assigned); fallback to main categorySelect
-                categoryId: (flashcard.categoryId !== undefined && flashcard.categoryId !== null) ? flashcard.categoryId : (document.getElementById('categorySelect') ? (document.getElementById('categorySelect').value || null) : null),
-                createdAt: new Date().toISOString(),
-                nextReview: new Date().toISOString(), // Available immediately
-                interval: 1,
-                easeFactor: 2.5,
-                repetitions: 0,
-                timesStudied: 0,
-                lastDifficulty: null
+
+            // Determine category id (may be blank)
+            const chosenCat = (flashcard.categoryId !== undefined && flashcard.categoryId !== null) ? flashcard.categoryId : (document.getElementById('categorySelect') ? (document.getElementById('categorySelect').value || '') : '');
+
+            // Fetch category to get pacing preset (async). Then add flashcard with preset values.
+            if (chosenCat === '' || chosenCat === null) {
+                // No category: use defaults
+                const tx0 = db.transaction(['flashcards'], 'readwrite');
+                const store0 = tx0.objectStore('flashcards');
+                const flashcardData0 = {
+                    front: flashcard.front,
+                    back: flashcard.back,
+                    videoTitle: videoData.title,
+                    videoUrl: videoData.url,
+                    subject: videoData.subject,
+                    categoryId: '',
+                    createdAt: new Date().toISOString(),
+                    nextReview: new Date().toISOString(),
+                    interval: 1,
+                    easeFactor: 2.5,
+                    repetitions: 0,
+                    timesStudied: 0,
+                    lastDifficulty: null
+                };
+                const req0 = store0.add(flashcardData0);
+                req0.onsuccess = () => console.log('Flashcard saved (no category)');
+                req0.onerror = () => console.error('Error saving flashcard:', req0.error);
+                return;
+            }
+
+            const tx = db.transaction(['categories'], 'readonly');
+            const store = tx.objectStore('categories');
+            const getReq = store.get(Number(chosenCat));
+            getReq.onsuccess = function(evt) {
+                const cat = evt.target.result || {};
+                const preset = cat && cat.pacingPreset ? getPresetById(cat.pacingPreset) : null;
+
+                const tx2 = db.transaction(['flashcards'], 'readwrite');
+                const store2 = tx2.objectStore('flashcards');
+                const flashcardData = {
+                    front: flashcard.front,
+                    back: flashcard.back,
+                    videoTitle: videoData.title,
+                    videoUrl: videoData.url,
+                    subject: videoData.subject,
+                    categoryId: chosenCat,
+                    createdAt: new Date().toISOString(),
+                    nextReview: new Date().toISOString(), // Available immediately
+                    interval: (preset && preset.initialInterval) ? Number(preset.initialInterval) : 1,
+                    easeFactor: (preset && preset.easeFactor) ? Number(preset.easeFactor) : 2.5,
+                    repetitions: 0,
+                    timesStudied: 0,
+                    lastDifficulty: null
+                };
+
+                const addReq = store2.add(flashcardData);
+                addReq.onsuccess = function() { console.log('Flashcard saved successfully with preset'); };
+                addReq.onerror = function() { console.error('Error saving flashcard:', addReq.error); };
             };
-            
-            const request = store.add(flashcardData);
-            
-            request.onsuccess = function() {
-                console.log('Flashcard saved successfully');
+            getReq.onerror = function() {
+                // Fallback: save with defaults
+                const tx3 = db.transaction(['flashcards'], 'readwrite');
+                const store3 = tx3.objectStore('flashcards');
+                const flashcardData = {
+                    front: flashcard.front,
+                    back: flashcard.back,
+                    videoTitle: videoData.title,
+                    videoUrl: videoData.url,
+                    subject: videoData.subject,
+                    categoryId: chosenCat,
+                    createdAt: new Date().toISOString(),
+                    nextReview: new Date().toISOString(),
+                    interval: 1,
+                    easeFactor: 2.5,
+                    repetitions: 0,
+                    timesStudied: 0,
+                    lastDifficulty: null
+                };
+                store3.add(flashcardData);
             };
-            
-            request.onerror = function() {
-                console.error('Error saving flashcard:', request.error);
-            };
+        }
+
+        // Return the pacing preset object for a categoryId (falls back to null)
+        function getCategoryPreset(categoryId) {
+            if (!db) return null;
+            if (!categoryId && categoryId !== 0) return null;
+            // try to read category synchronously isn't possible; return preset from DB via quick lookup
+            try {
+                const tx = db.transaction(['categories'], 'readonly');
+                const store = tx.objectStore('categories');
+                const req = store.get(Number(categoryId));
+                // This helper returns synchronously null but we set up an async path where needed
+                // For immediate callers that can use async, they should query directly. For save/update we call this synchronously only when possible.
+                // We'll return null here; callers that need the preset should fetch from DB.
+                return null;
+            } catch (e) {
+                return null;
+            }
         }
 
         // Category management
@@ -1386,6 +1425,11 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                 <button onclick='saveGlobalLimits()' style='padding:6px 10px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer;'>Save globals</button>
                             </div>
                         </div>
+                        <div style='display:flex;gap:12px;align-items:center;margin-bottom:10px;'>
+                            <div style='font-size:0.95rem;'>Pacing Preset:</div>
+                            <select id='presetSelector' style='padding:6px;border-radius:6px;border:1px solid #ccc;'></select>
+                            <button onclick='applyPresetToAll()' style='padding:6px 10px;background:#10b981;color:white;border:none;border-radius:6px;cursor:pointer;'>Apply to all categories</button>
+                        </div>
                         <div id="categoryManagerContent"></div>
                         <div style="margin-top:12px;display:flex;justify-content:space-between;">
                             <div>
@@ -1408,6 +1452,26 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 const parsed = JSON.parse(raw || '{}');
                 return { new: parsed.newCardsPerDay || '', review: parsed.reviewCardsPerDay || '' };
             } catch (e) { return { new: '', review: '' }; }
+        }
+
+        // Pacing presets (default set). Stored in localStorage under 'pacingPresets' if later customized.
+        function getPacingPresets() {
+            const raw = localStorage.getItem('pacingPresets');
+            if (raw) {
+                try { return JSON.parse(raw); } catch (e) { /* fallthrough */ }
+            }
+            // default presets
+            return [
+                { id: 'conservative', name: 'Conservative', initialInterval: 2, intervalMultiplier: 1.25, easeFactor: 2.8 },
+                { id: 'balanced', name: 'Balanced', initialInterval: 1, intervalMultiplier: 1.0, easeFactor: 2.5 },
+                { id: 'aggressive', name: 'Aggressive', initialInterval: 0.5, intervalMultiplier: 0.85, easeFactor: 2.2 }
+            ];
+        }
+
+        function getPresetById(id) {
+            if (!id) return null;
+            const presets = getPacingPresets();
+            return presets.find(p => String(p.id) === String(id)) || null;
         }
 
         function saveGlobalLimits() {
@@ -1440,17 +1504,25 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     container.innerHTML = '<div class="text-sm text-gray-600">No categories yet.</div>';
                     return;
                 }
+                // populate presets selector
+                const presets = getPacingPresets();
+                const presetSel = document.getElementById('presetSelector');
+                if (presetSel) {
+                    presetSel.innerHTML = presets.map(p=>`<option value='${p.id}'>${p.name}</option>`).join('');
+                }
+
                 let html = '<div style="display:flex;flex-direction:column;gap:12px;">';
                 cats.forEach(cat => {
                     const newVal = (cat.newCardsPerDay === null || cat.newCardsPerDay === undefined) ? '' : String(cat.newCardsPerDay);
                     const revVal = (cat.reviewCardsPerDay === null || cat.reviewCardsPerDay === undefined) ? '' : String(cat.reviewCardsPerDay);
+                    const presetValue = cat.pacingPreset || '';
                     html += `<div style="border:1px solid #f3f3f3;padding:10px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
                         <div style='flex:1'>
                             <div style='font-weight:600;margin-bottom:6px;'>${escapeHtml(cat.name)}</div>
                             <div style='display:flex;gap:8px;align-items:center;font-size:0.9rem;color:#555;'>
                                 <label style='display:flex;align-items:center;gap:6px;'>New/day: <input id='newLimit-${cat.id}' value='${newVal}' placeholder='global' style='width:72px;padding:6px;border:1px solid #ddd;border-radius:6px;'/></label>
                                 <label style='display:flex;align-items:center;gap:6px;'>Review/day: <input id='revLimit-${cat.id}' value='${revVal}' placeholder='global' style='width:72px;padding:6px;border:1px solid #ddd;border-radius:6px;'/></label>
-                                <span style='margin-left:8px;font-size:0.85rem;color:#777;'>Leave blank to use global defaults</span>
+                                <label style='display:flex;align-items:center;gap:6px;margin-left:8px;'>Pacing: <select id='preset-${cat.id}' style='padding:6px;border-radius:6px;border:1px solid #ccc;'><option value=''>(use global)</option>${getPacingPresets().map(p=>`<option value='${p.id}' ${p.id===presetValue? 'selected':''}>${p.name}</option>`).join('')}</select></label>
                             </div>
                         </div>
                         <div style='display:flex;gap:8px;align-items:center;'>
@@ -1465,10 +1537,31 @@ Make sure each flashcard tests something specific from the transcript content.`;
             };
         }
 
+        // Apply the currently-selected preset to all categories
+        function applyPresetToAll() {
+            const sel = document.getElementById('presetSelector');
+            if (!sel) return alert('No preset selector available');
+            const presetId = sel.value;
+            if (!db) return alert('DB not ready');
+            const tx = db.transaction(['categories'], 'readwrite');
+            const store = tx.objectStore('categories');
+            const req = store.getAll();
+            req.onsuccess = function() {
+                const cats = req.result || [];
+                cats.forEach(c => {
+                    c.pacingPreset = presetId || null;
+                    store.put(c);
+                });
+            };
+            req.onerror = function() { alert('Failed to apply preset'); };
+            tx.oncomplete = function() { refreshCategoryManager(); loadCategories(); refreshAllCategorySelects(); };
+        }
+
         // Save per-category settings into the categories object store
         function saveCategorySettings(id) {
             const newEl = document.getElementById(`newLimit-${id}`);
             const revEl = document.getElementById(`revLimit-${id}`);
+            const presetEl = document.getElementById(`preset-${id}`);
             if (!db) return alert('Database not available');
             const tx = db.transaction(['categories'], 'readwrite');
             const store = tx.objectStore('categories');
@@ -1478,10 +1571,12 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 if (!cat) return alert('Category not found');
                 const newVal = newEl && newEl.value.trim() !== '' ? parseInt(newEl.value,10) : null;
                 const revVal = revEl && revEl.value.trim() !== '' ? parseInt(revEl.value,10) : null;
+                const presetVal = presetEl && presetEl.value ? presetEl.value : null;
                 if (newVal !== null && (isNaN(newVal) || newVal < 0)) return alert('Invalid New/day value');
                 if (revVal !== null && (isNaN(revVal) || revVal < 0)) return alert('Invalid Review/day value');
                 cat.newCardsPerDay = newVal;
                 cat.reviewCardsPerDay = revVal;
+                cat.pacingPreset = presetVal;
                 store.put(cat).onsuccess = function() {
                     refreshCategoryManager();
                     loadCategories();
@@ -3358,18 +3453,73 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                         flashcard.repetitions || 0
                     );
 
-                    flashcard.nextReview = reviewData.nextReview;
-                    flashcard.interval = reviewData.interval;
-                    flashcard.easeFactor = reviewData.easeFactor;
-                    flashcard.repetitions = reviewData.repetitions;
-                    flashcard.timesStudied = (flashcard.timesStudied || 0) + 1;
-                    flashcard.lastDifficulty = difficulty;
-                    flashcard.lastStudied = new Date().toISOString();
+                    // Determine if this card's category has a pacing preset; if so, apply intervalMultiplier
+                    const catId = (flashcard.categoryId === undefined || flashcard.categoryId === null) ? '' : flashcard.categoryId;
+                    if (catId !== '' && db) {
+                        try {
+                            const cTx = db.transaction(['categories'], 'readonly');
+                            const cStore = cTx.objectStore('categories');
+                            const catReq = cStore.get(Number(catId));
+                            catReq.onsuccess = function(evt) {
+                                const cat = evt.target.result || {};
+                                const preset = cat && cat.pacingPreset ? getPresetById(cat.pacingPreset) : null;
+                                let finalInterval = reviewData.interval;
+                                if (preset && preset.intervalMultiplier) {
+                                    finalInterval = Number(finalInterval) * Number(preset.intervalMultiplier);
+                                }
 
-                    store.put(flashcard);
+                                // compute nextReview based on finalInterval (days)
+                                const next = new Date();
+                                next.setTime(next.getTime() + finalInterval * 24 * 60 * 60 * 1000);
 
-                    // Also record the study session
-                    recordStudySession(flashcardId, difficulty);
+                                flashcard.nextReview = next.toISOString();
+                                flashcard.interval = finalInterval;
+                                flashcard.easeFactor = reviewData.easeFactor;
+                                flashcard.repetitions = reviewData.repetitions;
+                                flashcard.timesStudied = (flashcard.timesStudied || 0) + 1;
+                                flashcard.lastDifficulty = difficulty;
+                                flashcard.lastStudied = new Date().toISOString();
+
+                                store.put(flashcard);
+                                // Also record the study session
+                                recordStudySession(flashcardId, difficulty);
+                            };
+                            catReq.onerror = function() {
+                                // fallback to default reviewData
+                                flashcard.nextReview = reviewData.nextReview;
+                                flashcard.interval = reviewData.interval;
+                                flashcard.easeFactor = reviewData.easeFactor;
+                                flashcard.repetitions = reviewData.repetitions;
+                                flashcard.timesStudied = (flashcard.timesStudied || 0) + 1;
+                                flashcard.lastDifficulty = difficulty;
+                                flashcard.lastStudied = new Date().toISOString();
+                                store.put(flashcard);
+                                recordStudySession(flashcardId, difficulty);
+                            };
+                        } catch (e) {
+                            // any error: fallback
+                            flashcard.nextReview = reviewData.nextReview;
+                            flashcard.interval = reviewData.interval;
+                            flashcard.easeFactor = reviewData.easeFactor;
+                            flashcard.repetitions = reviewData.repetitions;
+                            flashcard.timesStudied = (flashcard.timesStudied || 0) + 1;
+                            flashcard.lastDifficulty = difficulty;
+                            flashcard.lastStudied = new Date().toISOString();
+                            store.put(flashcard);
+                            recordStudySession(flashcardId, difficulty);
+                        }
+                    } else {
+                        // No category or DB not available — use computed reviewData directly
+                        flashcard.nextReview = reviewData.nextReview;
+                        flashcard.interval = reviewData.interval;
+                        flashcard.easeFactor = reviewData.easeFactor;
+                        flashcard.repetitions = reviewData.repetitions;
+                        flashcard.timesStudied = (flashcard.timesStudied || 0) + 1;
+                        flashcard.lastDifficulty = difficulty;
+                        flashcard.lastStudied = new Date().toISOString();
+                        store.put(flashcard);
+                        recordStudySession(flashcardId, difficulty);
+                    }
                 }
             };
         }
