@@ -38,12 +38,9 @@
                         <span class="w-6 h-6 bg-gray-400 text-white rounded-full flex items-center justify-center text-sm font-bold">2</span>
                         <span>Active Recall</span>
                     </div>
+                    <!-- Removed Prompt Engineering step (merged). Flashcards is now step 3 -->
                     <div id="step3-indicator" class="flex items-center space-x-2 px-4 py-2 rounded-full bg-gray-200 text-gray-600 cursor-pointer" onclick="goToStep(3)">
                         <span class="w-6 h-6 bg-gray-400 text-white rounded-full flex items-center justify-center text-sm font-bold">3</span>
-                        <span>Prompt Engineering</span>
-                    </div>
-                    <div id="step4-indicator" class="flex items-center space-x-2 px-4 py-2 rounded-full bg-gray-200 text-gray-600 cursor-pointer" onclick="goToStep(4)">
-                        <span class="w-6 h-6 bg-gray-400 text-white rounded-full flex items-center justify-center text-sm font-bold">4</span>
                         <span>Flashcards</span>
                     </div>
                 </div>
@@ -198,48 +195,10 @@
                 </div>
             </div>
 
-            <!-- Step 3: Prompt Engineering -->
+            <!-- Step 3 removed (Prompt Engineering merged into workflow). -->
+
+            <!-- Step 3: Flashcards (renumbered) -->
             <div id="step3" class="step-content hidden">
-                <div class="text-center mb-6">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-2">🎨 Creating Your Fun Flashcards</h2>
-                    <p class="text-gray-600">I'll analyze your transcript content to create specific, meaningful flashcards!</p>
-                </div>
-
-                <div class="bg-gradient-to-r from-purple-50 to-pink-50 p-8 rounded-xl border-2 border-purple-200">
-                    <div class="text-center mb-6">
-                        <div class="text-6xl mb-4">🧠✨📚</div>
-                        <h3 class="text-xl font-bold text-purple-800 mb-2">Smart Flashcard Generator</h3>
-                        <p class="text-purple-700">Analyzing your content to create personalized study materials!</p>
-                    </div>
-
-                    <div class="grid md:grid-cols-3 gap-4 mb-6">
-                        <div class="bg-white p-4 rounded-lg text-center border border-purple-200">
-                            <div class="text-2xl mb-2">🧠</div>
-                            <div class="font-semibold text-gray-800">Content Analysis</div>
-                            <div class="text-sm text-gray-600">Identifies key educational concepts</div>
-                        </div>
-                        <div class="bg-white p-4 rounded-lg text-center border border-purple-200">
-                            <div class="text-2xl mb-2">🎯</div>
-                            <div class="font-semibold text-gray-800">Targeted Questions</div>
-                            <div class="text-sm text-gray-600">Based on your specific content</div>
-                        </div>
-                        <div class="bg-white p-4 rounded-lg text-center border border-purple-200">
-                            <div class="text-2xl mb-2">📚</div>
-                            <div class="font-semibold text-gray-800">Learning Focused</div>
-                            <div class="text-sm text-gray-600">Optimized for retention and recall</div>
-                        </div>
-                    </div>
-
-                    <div class="text-center">
-                        <button onclick="generateFlashcardsAndGoToStudy()" class="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-4 px-8 rounded-xl text-lg shadow-lg transform hover:scale-105 transition-all">
-                            🎉 Ready for Prompt Engineering! 🎉
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Step 4: Flashcards -->
-            <div id="step4" class="step-content hidden">
                 <div class="text-center mb-6">
                     <h2 class="text-2xl font-bold text-gray-800 mb-2">🎴 Your Smart Flashcards</h2>
                     <p class="text-gray-600">Study with spaced repetition - cards you struggle with appear more often!</p>
@@ -483,6 +442,26 @@
         }
 
         // REAL LLM Integration Options
+        // Guarded generator: ensures we only generate flashcards once per videoData
+        async function generateAndStoreFlashcards() {
+            if (!videoData) videoData = { transcript: document.getElementById('videoTranscript').value || '' };
+
+            if (videoData.flashcardsGenerated && flashcards && flashcards.length > 0) {
+                console.log('Flashcards already generated for this videoData - reusing.');
+                return;
+            }
+
+            // Generate via LLM/fallback
+            const generated = await generateFlashcardsWithLLM(videoData);
+            flashcards = generated || [];
+
+            // Save to DB if available and not already saved
+            if (db && flashcards.length > 0) {
+                flashcards.forEach(flashcard => saveFlashcard(flashcard, videoData));
+            }
+
+            videoData.flashcardsGenerated = true;
+        }
         async function generateFlashcardsWithLLM(videoData) {
             const transcript = videoData.transcript || '';
             
@@ -1101,9 +1080,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
             generateButton.disabled = true;
             
             try {
-                // Use real LLM-style analysis to generate flashcards
-                flashcards = await generateFlashcardsWithLLM(videoData);
-                console.log('Generated flashcards:', flashcards);
+                // Use guarded generation so we only create flashcards once per videoData
+                await generateAndStoreFlashcards();
+                console.log('Generated flashcards (guarded):', flashcards);
             } catch (error) {
                 console.error('Error generating flashcards:', error);
                 flashcards = [{
@@ -1127,7 +1106,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             
             // Set up the study session
             setupFlashcardStudy();
-            showStep(4);
+            showStep(3);
         }
 
         // [Rest of the existing functions remain the same - calculateNextReview, saveFlashcard, etc.]
@@ -1206,9 +1185,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
         }
 
         function updateStepIndicator(step) {
-            // Reset all indicators
-            for (let i = 1; i <= 4; i++) {
+            // Reset all indicators (now 3 steps)
+            for (let i = 1; i <= 3; i++) {
                 const indicator = document.getElementById(`step${i}-indicator`);
+                if (!indicator) continue;
                 if (i <= step) {
                     indicator.className = "flex items-center space-x-2 px-4 py-2 rounded-full bg-blue-500 text-white";
                     indicator.querySelector('span').className = "w-6 h-6 bg-white text-blue-500 rounded-full flex items-center justify-center text-sm font-bold";
@@ -1462,20 +1442,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     // First time: Create flashcards AND provide feedback
                     analyzeButton.innerHTML = '🧠 Creating flashcards and analyzing responses... ⏳';
                     
-                    console.log('Generating flashcards with LLM...');
-                    // Generate flashcards using LLM
-                    flashcards = await generateFlashcardsWithLLM(videoData);
-                    console.log('Generated flashcards:', flashcards);
-                    
-                    // Mark as generated
-                    videoData.flashcardsGenerated = true;
-                    
-                    // Save flashcards to database
-                    if (db && flashcards && flashcards.length > 0) {
-                        flashcards.forEach(flashcard => {
-                            saveFlashcard(flashcard, videoData);
-                        });
-                    }
+                    console.log('Generating flashcards (guarded)...');
+                    await generateAndStoreFlashcards();
+                    console.log('Generated flashcards (guarded):', flashcards);
                     
                     // Display the generated flashcards
                     displayFlashcardPreview(flashcards);
@@ -1625,9 +1594,9 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             `;
         }
 
-        // Display flashcard preview (removed - users will see cards in step 4)
+        // Display flashcard preview (removed - users will see cards in step 3)
         function displayFlashcardPreview(flashcards) {
-            console.log('Flashcards generated:', flashcards.length, 'cards - will be shown in step 4');
+            console.log('Flashcards generated:', flashcards.length, 'cards - will be shown in step 3');
             // No preview display - users will see flashcards in the study section
         }
 
@@ -1660,8 +1629,8 @@ Be specific - reference actual content from the transcript. Keep under 200 words
         async function generateFlashcardsAndGoToStudy() {
             console.log('generateFlashcardsAndGoToStudy called!');
             
-            // Show step 4 immediately with loading message
-            showStep(4);
+            // Show step 3 immediately with loading message
+            showStep(3);
             
             // Show loading state in flashcard area
             const container = document.getElementById('flashcardContainer');
@@ -1677,21 +1646,14 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             `;
             
             try {
-                // Generate flashcards
-                flashcards = await generateFlashcardsWithLLM(videoData);
+                // Generate flashcards (guarded so we only generate once per videoData)
+                await generateAndStoreFlashcards();
                 console.log('Generated flashcards:', flashcards.length);
-                
-                // Save to database
-                if (db && flashcards && flashcards.length > 0) {
-                    flashcards.forEach(flashcard => {
-                        saveFlashcard(flashcard, videoData);
-                    });
-                }
-                
+
                 // Set up study and show first card
                 setupFlashcardStudy();
                 showCurrentCard(); // Immediately show the first card
-                
+
             } catch (error) {
                 console.error('Error generating flashcards:', error);
                 
@@ -2013,7 +1975,7 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                 
                 // Skip to flashcard step
                 setupFlashcardStudy();
-                showStep(4);
+                showStep(3);
             });
         }
 
