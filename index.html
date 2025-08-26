@@ -147,6 +147,16 @@
                             📋 View All Cards
                         </button>
                     </div>
+                
+                    <!-- Category quick-review panel -->
+                    <div id="categoryReviewPanel" class="mt-4 p-3 bg-white rounded-lg border">
+                        <h4 class="text-sm font-semibold text-gray-800 mb-2">Review by Category</h4>
+                        <div id="categoryList" class="space-y-2 text-sm text-gray-700">Loading categories...</div>
+                        <div class="mt-3">
+                            <button onclick="refreshCategoryReviewPanel()" class="text-xs text-blue-600 hover:underline">Refresh</button>
+                            <button onclick="startReviewDueToday()" class="ml-4 text-xs text-orange-600 hover:underline">View All Due Today</button>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="space-y-4">
@@ -1452,12 +1462,15 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     unc.value = '';
                     unc.textContent = 'Uncategorized';
                     sel.appendChild(unc);
+
+                    // Append all categories
                     cats.forEach(c => {
                         const o = document.createElement('option');
                         o.value = c.id;
                         o.textContent = c.name;
                         sel.appendChild(o);
                     });
+
                     if (includeAddNew) {
                         const addOpt = document.createElement('option');
                         addOpt.value = '__add_new__';
@@ -1484,6 +1497,113 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     rebuildSelect(sel, hadAdd);
                 });
             };
+        }
+
+        // Return a map of categoryId -> { name, dueCount }
+        function getDueCountsByCategory(callback) {
+            if (!db) { callback([]); return; }
+
+            // Load categories first
+            const tx1 = db.transaction(['categories'], 'readonly');
+            const store1 = tx1.objectStore('categories');
+            const req1 = store1.getAll();
+            req1.onsuccess = function() {
+                const cats = req1.result || [];
+
+                // Initialize counts with uncategorized
+                const counts = { '': { id: '', name: 'Uncategorized', dueCount: 0 } };
+                cats.forEach(c => counts[String(c.id)] = { id: c.id, name: c.name, dueCount: 0 });
+
+                // Now fetch due flashcards
+                const tx2 = db.transaction(['flashcards'], 'readonly');
+                const store2 = tx2.objectStore('flashcards');
+                const index = store2.index('nextReview');
+                const now = new Date().toISOString();
+                const range = IDBKeyRange.upperBound(now);
+                const req2 = index.getAll(range);
+                req2.onsuccess = function() {
+                    const due = req2.result || [];
+                    due.forEach(card => {
+                        const key = (card.categoryId === undefined || card.categoryId === null || card.categoryId === '') ? '' : String(card.categoryId);
+                        if (!counts[key]) counts[key] = { id: key, name: 'Unknown', dueCount: 0 };
+                        counts[key].dueCount = (counts[key].dueCount || 0) + 1;
+                    });
+
+                    // Convert to array sorted by dueCount desc
+                    const arr = Object.values(counts).sort((a,b) => b.dueCount - a.dueCount || String(a.name).localeCompare(b.name));
+                    callback(arr);
+                };
+                req2.onerror = function() { callback(Object.values(counts)); };
+            };
+            req1.onerror = function() { callback([]); };
+        }
+
+        function refreshCategoryReviewPanel() {
+            const panel = document.getElementById('categoryList');
+            if (!panel) return;
+            panel.innerHTML = 'Loading...';
+            getDueCountsByCategory(function(list) {
+                if (!list || list.length === 0) {
+                    panel.innerHTML = '<div class="text-xs text-gray-500">No categories or no cards due.</div>';
+                    return;
+                }
+                panel.innerHTML = '';
+                list.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'flex justify-between items-center';
+                    div.innerHTML = `<div>${escapeHtml(item.name || 'Uncategorized')} <span class="text-xs text-gray-400">(${item.dueCount} due)</span></div>` +
+                        `<div><button class="text-xs text-blue-600 hover:underline" onclick="startCategoryReview('${item.id}')">Review</button></div>`;
+                    panel.appendChild(div);
+                });
+            });
+        }
+
+        function startCategoryReview(categoryId) {
+            if (!db) return;
+            const tx = db.transaction(['flashcards'], 'readonly');
+            const store = tx.objectStore('flashcards');
+            const req = store.getAll();
+            req.onsuccess = function() {
+                const all = req.result || [];
+                const now = new Date();
+                const filtered = all.filter(c => {
+                    const catKey = (c.categoryId === undefined || c.categoryId === null) ? '' : String(c.categoryId);
+                    const matchCat = String(categoryId) === String(catKey);
+                    const nr = c.nextReview ? new Date(c.nextReview) : new Date(0);
+                    return matchCat && nr <= now;
+                });
+
+                if (filtered.length === 0) {
+                    alert('No due cards in this category right now.');
+                    return;
+                }
+
+                flashcards = filtered;
+                studyQueue = [...filtered];
+                currentCardIndex = 0;
+                cardDifficulties = {};
+                setupFlashcardStudy();
+                showStep(3);
+                // Render the first card slightly after the DOM updates to avoid race conditions
+                setTimeout(() => {
+                    try {
+                        if (typeof showCurrentCard === 'function') showCurrentCard();
+                    } catch (err) {
+                        console.error('Error showing first category card:', err);
+                    }
+                }, 50);
+            };
+        }
+
+        function startReviewDueToday() {
+            // Alias to startReviewSession (all due cards)
+            startReviewSession();
+        }
+
+        // Utility to escape HTML for safe insertion
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
 
         function updateStepIndicator(step) {
@@ -2317,6 +2437,13 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                 // Skip to flashcard step
                 setupFlashcardStudy();
                 showStep(3);
+                setTimeout(() => {
+                    try {
+                        if (typeof showCurrentCard === 'function') showCurrentCard();
+                    } catch (err) {
+                        console.error('Error showing first card after startReviewSession:', err);
+                    }
+                }, 50);
             });
         }
 
