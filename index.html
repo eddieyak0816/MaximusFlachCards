@@ -2227,10 +2227,12 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                     // Build rows with per-row category select (and Add New option)
                     const catsMap = catList.reduce((m, c) => { m[c.id] = c.name; return m; }, {});
                     allCards.forEach(card => {
+                        // Normalize stored category id to string for robust comparison (DB may contain numbers or strings)
+                        const cardCatId = (card.categoryId === undefined || card.categoryId === null) ? '' : String(card.categoryId);
                         // Build options for this row's select
-                        let optionsHtml = "<option value=''" + ((card.categoryId === '' || !card.categoryId) ? ' selected' : '') + ">Uncategorized</option>";
+                        let optionsHtml = `<option value=''${cardCatId === '' ? ' selected' : ''}>Uncategorized</option>`;
                         catList.forEach(c => {
-                            const sel = (c.id === card.categoryId) ? ' selected' : '';
+                            const sel = (String(c.id) === cardCatId) ? ' selected' : '';
                             optionsHtml += `<option value='${c.id}'${sel}>${c.name}</option>`;
                         });
                         optionsHtml += "<option value='__add_new__'>Add New...</option>";
@@ -2315,12 +2317,15 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             }
 
             // Bulk change category for selected cards
-            function bulkChangeCategory() {
+                function bulkChangeCategory() {
                 const ids = getSelectedCardIds();
                 if (!ids || ids.length === 0) return alert('No cards selected');
                 const sel = document.getElementById('bulkCategorySelect');
                 if (!sel) return;
                 const newCat = sel.value;
+
+                // Coerce the chosen category to number when appropriate so stored values match category ids
+                const coercedCat = (newCat === '' || newCat === null) ? '' : (isNaN(parseInt(newCat)) ? newCat : parseInt(newCat));
 
                 const tx = db.transaction(['flashcards'], 'readwrite');
                 const store = tx.objectStore('flashcards');
@@ -2329,7 +2334,7 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                     req.onsuccess = function(evt) {
                         const card = evt.target.result;
                         if (!card) return;
-                        card.categoryId = newCat;
+                        card.categoryId = coercedCat;
                         store.put(card);
                     };
                 });
@@ -2417,37 +2422,155 @@ Be specific - reference actual content from the transcript. Keep under 200 words
                 });
             }
 
-            // Save row now: writes front/back/category to DB for given cardId
-            function saveRowNow(cardId) {
-                if (!db) return;
-                const frontEl = document.getElementById(`front-${cardId}`);
-                const backEl = document.getElementById(`back-${cardId}`);
-                const sel = document.querySelector(`select[data-card-id='${cardId}']`);
-                const front = frontEl ? frontEl.value : '';
-                const back = backEl ? backEl.value : '';
-                const rawCat = sel ? sel.value : '';
-                const categoryId = (rawCat === '' || rawCat === null) ? '' : (rawCat === '__add_new__' ? '' : (isNaN(parseInt(rawCat)) ? rawCat : parseInt(rawCat)));
+            // Note: handlers used by the All Cards modal are implemented in global scope below
+            };
+        }
 
-                const tx = db.transaction(['flashcards'], 'readwrite');
-                const store = tx.objectStore('flashcards');
-                const req = store.get(cardId);
+        // Global handlers for the All Flashcards modal
+        // These must be global so inline handlers in the modal HTML can call them
+        async function handleRowCategoryChange(cardId, value) {
+            if (!db) return;
+            const sel = document.querySelector(`select[data-card-id='${cardId}']`);
+            const addContainer = document.querySelector(`div[data-add-container='${cardId}']`);
+            if (value === '__add_new__') {
+                if (!addContainer) return;
+                addContainer.innerHTML = `<input data-new-input='${cardId}' placeholder='New category name' style='padding:6px;border:1px solid #ccc;border-radius:6px;' /><button data-new-add='${cardId}' style='background:#3182ce;color:white;border:none;padding:6px 8px;border-radius:6px;margin-left:6px;cursor:pointer;'>Add</button><button data-new-cancel='${cardId}' style='background:#a0aec0;color:white;border:none;padding:6px 8px;border-radius:6px;margin-left:6px;cursor:pointer;'>Cancel</button>`;
+
+                const input = addContainer.querySelector(`input[data-new-input='${cardId}']`);
+                const addBtn = addContainer.querySelector(`button[data-new-add='${cardId}']`);
+                const cancelBtn = addContainer.querySelector(`button[data-new-cancel='${cardId}']`);
+
+                addBtn.addEventListener('click', async () => {
+                    const name = input.value && input.value.trim();
+                    if (!name) return alert('Enter a category name');
+                    const newCatId = await createCategoryFromPrompt(name);
+                    if (!newCatId) return alert('Could not create category');
+                    if (sel) sel.value = newCatId;
+                    addContainer.innerHTML = '';
+                    await saveRowNow(cardId);
+                });
+
+                cancelBtn.addEventListener('click', () => {
+                    if (sel) sel.value = '';
+                    addContainer.innerHTML = '';
+                });
+
+                return;
+            }
+
+            const tx = db.transaction(['flashcards'], 'readwrite');
+            const store = tx.objectStore('flashcards');
+            const req = store.get(cardId);
+            req.onsuccess = function(evt) {
+                const card = evt.target.result;
+                if (!card) return;
+                if (value === '' || value === null) card.categoryId = '';
+                else if (value === '__add_new__') return;
+                else {
+                    const parsed = parseInt(value);
+                    card.categoryId = isNaN(parsed) ? value : parsed;
+                }
+                store.put(card);
+            };
+        }
+
+        function createCategoryFromPrompt(name) {
+            return new Promise((resolve) => {
+                if (!db) return resolve(null);
+                const tx = db.transaction(['categories'], 'readwrite');
+                const store = tx.objectStore('categories');
+                const addReq = store.add({ name });
+                addReq.onsuccess = function(evt) {
+                    resolve(evt.target.result);
+                };
+                addReq.onerror = function(evt) {
+                    const getReq = store.index('name').get(name);
+                    getReq.onsuccess = function(e) {
+                        resolve(e.target.result ? e.target.result.id : null);
+                    };
+                    getReq.onerror = function() { resolve(null); };
+                };
+            });
+        }
+
+        // Save row now: writes front/back/category to DB for given cardId
+        function saveRowNow(cardId) {
+            if (!db) return;
+            const frontEl = document.getElementById(`front-${cardId}`);
+            const backEl = document.getElementById(`back-${cardId}`);
+            const sel = document.querySelector(`select[data-card-id='${cardId}']`);
+            const front = frontEl ? frontEl.value : '';
+            const back = backEl ? backEl.value : '';
+            const rawCat = sel ? sel.value : '';
+            const categoryId = (rawCat === '' || rawCat === null) ? '' : (rawCat === '__add_new__' ? '' : (isNaN(parseInt(rawCat)) ? rawCat : parseInt(rawCat)));
+
+            const tx = db.transaction(['flashcards'], 'readwrite');
+            const store = tx.objectStore('flashcards');
+            const req = store.get(cardId);
+            req.onsuccess = function(evt) {
+                const card = evt.target.result || { id: cardId };
+                card.front = front;
+                card.back = back;
+                card.categoryId = categoryId;
+                store.put(card);
+            };
+            tx.oncomplete = function() {
+                const rowFront = document.getElementById(`front-${cardId}`);
+                if (rowFront) {
+                    rowFront.style.outline = '2px solid #9AE6B4';
+                    setTimeout(() => rowFront.style.outline = '', 800);
+                }
+            };
+        }
+
+        function getSelectedCardIds() {
+            const rows = document.querySelectorAll('.rowSelect:checked');
+            return Array.from(rows).map(r => parseInt(r.getAttribute('data-id'))).filter(Boolean);
+        }
+
+        function bulkDeleteSelected() {
+            const ids = getSelectedCardIds();
+            if (!ids || ids.length === 0) return alert('No cards selected');
+            if (!confirm(`Delete ${ids.length} selected cards? This cannot be undone.`)) return;
+
+            const tx = db.transaction(['flashcards'], 'readwrite');
+            const store = tx.objectStore('flashcards');
+            ids.forEach(id => store.delete(id));
+            tx.oncomplete = function() { showAllCards(); updateLibraryStats && updateLibraryStats(); };
+        }
+
+        function bulkChangeCategory() {
+            const ids = getSelectedCardIds();
+            if (!ids || ids.length === 0) return alert('No cards selected');
+            const sel = document.getElementById('bulkCategorySelect');
+            if (!sel) return;
+            const newCat = sel.value;
+            const coercedCat = (newCat === '' || newCat === null) ? '' : (isNaN(parseInt(newCat)) ? newCat : parseInt(newCat));
+
+            const tx = db.transaction(['flashcards'], 'readwrite');
+            const store = tx.objectStore('flashcards');
+            ids.forEach(id => {
+                const req = store.get(id);
                 req.onsuccess = function(evt) {
-                    const card = evt.target.result || { id: cardId };
-                    card.front = front;
-                    card.back = back;
-                    card.categoryId = categoryId;
+                    const card = evt.target.result;
+                    if (!card) return;
+                    card.categoryId = coercedCat;
                     store.put(card);
                 };
-                tx.oncomplete = function() {
-                    // Optionally: show a small saved indicator
-                    const rowFront = document.getElementById(`front-${cardId}`);
-                    if (rowFront) {
-                        rowFront.style.outline = '2px solid #9AE6B4';
-                        setTimeout(() => rowFront.style.outline = '', 800);
-                    }
-                };
-            }
-            };
+            });
+            tx.oncomplete = function() { showAllCards(); };
+        }
+
+        function toggleMasterSelect(master) {
+            const rows = document.querySelectorAll('.rowSelect');
+            rows.forEach(r => { r.checked = master.checked; });
+            rows.forEach(r => r.addEventListener('change', () => {
+                const all = document.querySelectorAll('.rowSelect');
+                const checked = document.querySelectorAll('.rowSelect:checked');
+                const masterBox = document.getElementById('masterSelect');
+                if (!masterBox) return;
+                masterBox.checked = (all.length > 0 && checked.length === all.length);
+            }));
         }
 
         // Update a flashcard field (front/back)
