@@ -146,6 +146,9 @@
                         <button onclick="showAllCards()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm">
                             📋 View All Cards
                         </button>
+                        <button onclick="exportAllFlashcardsToCSV(true)" class="text-sm text-blue-600 hover:underline ml-2">Export CSV</button>
+                        <button onclick="document.getElementById('csvFileInput').click()" class="text-sm text-blue-600 hover:underline ml-2">Import CSV</button>
+                        <input id="csvFileInput" type="file" accept=".csv,text/csv" style="display:none" onchange="handleCSVFile(event)" />
                     </div>
                 
                     <!-- Category quick-review panel -->
@@ -3446,6 +3449,95 @@ Be specific - reference actual content from the transcript. Keep under 200 words
             try { refreshAllCategorySelects(); } catch (e) { /* ignore */ }
             try { refreshCategoryReviewPanel(); } catch (e) { /* ignore */ }
         });
+
+        // Export all flashcards to CSV (promptDownload=true triggers a download)
+        function exportAllFlashcardsToCSV(promptDownload = true) {
+            // Build CSV from flashcards store
+            const tx = db.transaction(['flashcards', 'categories'], 'readonly');
+            const store = tx.objectStore('flashcards');
+            const req = store.getAll();
+            req.onsuccess = async () => {
+                const rows = req.result || [];
+                // build category id->name map
+                let catMap = {};
+                try {
+                    const catReq = tx.objectStore('categories').getAll();
+                    await new Promise(res => { catReq.onsuccess = () => { (catReq.result||[]).forEach(c=>{catMap[c.id]=c.name}); res(); }; catReq.onerror = res; });
+                } catch (e) { /* ignore */ }
+
+                const header = ['front','back','category'];
+                const esc = v => '"' + String(v || '').replace(/"/g, '""') + '"';
+                const lines = [header.join(',')];
+                rows.forEach(r => {
+                    const front = r.front || '';
+                    const back = r.back || '';
+                    const category = r.categoryName || (r.categoryId ? (catMap[r.categoryId] || r.categoryId) : '');
+                    lines.push([esc(front), esc(back), esc(category)].join(','));
+                });
+                const csv = lines.join('\n');
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const filename = `maximus_flashcards_backup_${new Date().toISOString().slice(0,10)}.csv`;
+                if (promptDownload) {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } else {
+                    console.log('CSV built:', filename);
+                }
+            };
+            req.onerror = () => { alert('Failed to read flashcards'); };
+        }
+
+        // CSV import handler
+        function handleCSVFile(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const text = e.target.result;
+                try {
+                    await importCSVFromText(text);
+                    alert('CSV import complete.');
+                    try { loadCategories(); } catch (e) {}
+                    try { refreshCategoryReviewPanel(); } catch (e) {}
+                } catch (err) {
+                    console.error(err);
+                    alert('CSV import failed. See console.');
+                }
+            };
+            reader.onerror = () => { alert('Failed to read file'); };
+            reader.readAsText(file, 'utf-8');
+            event.target.value = '';
+        }
+
+        async function importCSVFromText(text) {
+            if (!db) throw new Error('DB not ready');
+            // very small CSV parser
+            const rows = text.split(/\r?\n/).map(r=>r.trim()).filter(Boolean).map(r=>{
+                // split on commas not inside quotes
+                const res=[]; let cur=''; let inQ=false;
+                for (let i=0;i<r.length;i++){const ch=r[i]; if (ch==='"'){ if (inQ && r[i+1]==='"'){ cur+='"'; i++; } else inQ=!inQ; } else if (ch===',' && !inQ){ res.push(cur); cur=''; } else cur+=ch; } res.push(cur); return res.map(c=>c.replace(/^"|"$/g,'').replace(/""/g,'"'));
+            });
+            if (rows.length<1) throw new Error('No rows');
+            const header = rows[0].map(h=>h.toLowerCase().trim());
+            const fIdx = header.indexOf('front');
+            const bIdx = header.indexOf('back');
+            const cIdx = header.indexOf('category');
+            if (fIdx===-1 || bIdx===-1) throw new Error('Missing required columns front/back');
+            const tx = db.transaction(['flashcards'],'readwrite');
+            const store = tx.objectStore('flashcards');
+            for (let i=1;i<rows.length;i++){
+                const r=rows[i];
+                const item = { front: r[fIdx]||'', back: r[bIdx]||'', categoryName: (cIdx!==-1? r[cIdx]||'':''), createdAt: new Date().toISOString() };
+                store.add(item);
+            }
+            return new Promise((res,rej)=>{ tx.oncomplete = ()=>res(true); tx.onerror = ()=>rej(tx.error); });
+        }
 
         // Initialize
         initializeApp();
