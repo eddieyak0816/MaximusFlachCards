@@ -2762,18 +2762,70 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
         // Attach event listeners to play/stop buttons on the current card
         function populateCardAudioControls() {
-            // Play Question
+            // Helper to build opts object from control ids
+            function buildOpts(fromBack) {
+                try {
+                    const selId = fromBack ? 'voiceSelectBack' : 'voiceSelect';
+                    const rateId = fromBack ? 'voiceRateBack' : 'voiceRate';
+                    const pitchId = fromBack ? 'voicePitchBack' : 'voicePitch';
+                    const sel = document.getElementById(selId);
+                    const rateEl = document.getElementById(rateId);
+                    const pitchEl = document.getElementById(pitchId);
+                    const savedRate = localStorage.getItem('ttsRate');
+                    const savedPitch = localStorage.getItem('ttsPitch');
+                    const rate = rateEl ? Number(rateEl.value) : (savedRate ? Number(savedRate) : 1);
+                    const pitch = pitchEl ? Number(pitchEl.value) : (savedPitch ? Number(savedPitch) : 1);
+                    const opts = { rate, pitch };
+                    if (sel && sel.value) opts.voiceName = sel.value;
+                    return opts;
+                } catch (e) { return { rate: 1, pitch: 1 }; }
+            }
+
+            // Play Question using front controls
             document.querySelectorAll('[data-play-question]').forEach(btn => {
-                btn.onclick = function() { const txt = this.getAttribute('data-play-question'); playCardText(txt); };
+                btn.onclick = function() {
+                    const txt = this.getAttribute('data-play-question');
+                    const opts = buildOpts(false);
+                    const utter = speakTextWithOptions(txt, opts);
+                    return utter;
+                };
             });
-            // Play Answer
+
+            // Play Answer using back controls
             document.querySelectorAll('[data-play-answer]').forEach(btn => {
-                btn.onclick = function() { const txt = this.getAttribute('data-play-answer'); playCardText(txt); };
+                btn.onclick = function() {
+                    const txt = this.getAttribute('data-play-answer');
+                    const opts = buildOpts(true);
+                    const utter = speakTextWithOptions(txt, opts);
+                    return utter;
+                };
             });
-            // Play Q->A
+
+            // Play Q->A: play front with front opts then back with back opts
             document.querySelectorAll('[data-play-qa]').forEach(btn => {
-                btn.onclick = function() { const q = this.getAttribute('data-play-qa-q'); const a = this.getAttribute('data-play-qa-a'); playCardSequential(q, a); };
+                btn.onclick = function() {
+                    const q = this.getAttribute('data-play-qa-q') || '';
+                    const a = this.getAttribute('data-play-qa-a') || '';
+                    const optsQ = buildOpts(false);
+                    const optsA = buildOpts(true);
+                    // stop any existing speech first
+                    stopSpeech();
+                    const first = speakTextWithOptions(q, optsQ);
+                    try {
+                        if (first && typeof first === 'object') {
+                            first.onend = function() {
+                                speakTextWithOptions(a, optsA);
+                            };
+                        } else {
+                            // fallback: play second after slight delay
+                            setTimeout(() => speakTextWithOptions(a, optsA), 600);
+                        }
+                    } catch (e) {
+                        setTimeout(() => speakTextWithOptions(a, optsA), 600);
+                    }
+                };
             });
+
             // Stop buttons
             document.querySelectorAll('[data-stop-audio]').forEach(btn => { btn.onclick = stopSpeech; });
         }
