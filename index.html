@@ -2951,8 +2951,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             r._lastSentText = txt;
                             // append user message into conv
                             appendAiMessage('You', txt, window._activeConversation && window._activeConversation.convEl);
+                            // determine context: prefer explicit contextText, fall back to _contextText (used by modal)
+                            const ctx = (window._activeConversation && (window._activeConversation.contextText || window._activeConversation._contextText || ''));
                             // send to AI
-                            try { sendAiChatMessage(txt, window._activeConversation && window._activeConversation.contextText, window._activeConversation); } catch (e) { console.error(e); }
+                            try { sendAiChatMessage(txt, ctx, window._activeConversation); } catch (e) { console.error(e); }
                         }
                     } catch (e) { console.error(e); }
                 };
@@ -3389,92 +3391,16 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     try { window._localMicStream.getTracks().forEach(t => t.stop()); window._localMicStream = null; } catch (e) {}
                 }
             };
-            document.getElementById('aiSend').onclick = async () => { const q = document.getElementById('aiChatInput').value.trim(); if (!q) return; appendAiMessage('You', q); document.getElementById('aiChatInput').value = ''; await sendAiChatMessage(q, contextText, modal); };
+            // wire send to append to modal conv and use modal context
+            document.getElementById('aiSend').onclick = async () => { const q = document.getElementById('aiChatInput').value.trim(); if (!q) return; appendAiMessage('You', q, document.getElementById('aiChatConversation')); document.getElementById('aiChatInput').value = ''; await sendAiChatMessage(q, contextText, modal); };
             const micBtn = document.getElementById('aiMic');
+            // expose modal conversation elements so shared recognizer can use them
+            modal.convEl = document.getElementById('aiChatConversation');
+            modal.inputEl = document.getElementById('aiChatInput');
+            modal.micBtn = micBtn;
             micBtn.onclick = function() {
-                // Toggle speech recognition with reuse to avoid repeated permission prompts
-                if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) { alert('Speech recognition not supported in this browser'); return; }
-
-                const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-                // Create and reuse a single instance so the browser doesn't re-prompt repeatedly
-                if (!window.speechRecognitionInstance) {
-                    try {
-                        const rInstance = new Rec();
-                        rInstance.lang = navigator.language || 'en-US';
-                        rInstance.continuous = true; // keep capturing until we explicitly stop
-                        rInstance.interimResults = true; // allow interim results for smoother UX
-                        rInstance.listening = false;
-                        rInstance._stopTimer = null;
-                        rInstance._lastSentText = '';
-
-                        rInstance.onstart = () => { rInstance.listening = true; micBtn.textContent = '● Recording'; };
-                        rInstance.onerror = (e) => { rInstance.listening = false; micBtn.textContent = '🎤'; console.error('Speech recognition error', e); };
-
-                        rInstance.onresult = function(evt) {
-                            // Aggregate interim and final transcripts
-                            let interim = '';
-                            let finalText = '';
-                            for (let i = evt.resultIndex; i < evt.results.length; i++) {
-                                const res = evt.results[i];
-                                if (res.isFinal) finalText += (res[0].transcript || ''); else interim += (res[0].transcript || '');
-                            }
-                            const display = (finalText || interim).trim();
-                            if (display) document.getElementById('aiChatInput').value = display;
-
-                            // Reset stop timer and schedule a stop 2s after last recognised speech
-                            if (rInstance._stopTimer) clearTimeout(rInstance._stopTimer);
-                            rInstance._stopTimer = setTimeout(() => {
-                                try { rInstance.stop(); } catch (e) { /* ignore */ }
-                            }, 2000);
-                        };
-
-                        rInstance.onend = function() {
-                            rInstance.listening = false;
-                            micBtn.textContent = '🎤';
-                            // If there's text in the input and it wasn't just sent, send it now
-                            try {
-                                const txt = (document.getElementById('aiChatInput').value || '').trim();
-                                if (txt && txt !== rInstance._lastSentText) {
-                                    rInstance._lastSentText = txt;
-                                    appendAiMessage('You', txt);
-                                    setTimeout(() => { try { sendAiChatMessage(txt, modal._contextText, modal); } catch(e){} }, 180);
-                                }
-                            } catch (e) { console.error(e); }
-                        };
-
-                        // Try to request microphone access once so the browser can remember permission
-                        try {
-                            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                                navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-                                    try { window._localMicStream = stream; } catch (e) { console.warn('Could not store mic stream', e); }
-                                }).catch(err => { console.warn('getUserMedia declined or unavailable', err); });
-                            }
-                        } catch (e) { /* ignore */ }
-
-                        window.speechRecognitionInstance = rInstance;
-                    } catch (e) {
-                        console.error('Failed to create SpeechRecognition', e);
-                        alert('Speech recognition is not available in this browser.');
-                        return;
-                    }
-                }
-
-                const r = window.speechRecognitionInstance;
-                // Toggle listening
-                if (r.listening) {
-                    try { if (r._stopTimer) { clearTimeout(r._stopTimer); r._stopTimer = null; } r.stop(); } catch(e){}
-                    return;
-                }
-
-                // Start recognition
-                try {
-                    r._lastSentText = '';
-                    if (r._stopTimer) { clearTimeout(r._stopTimer); r._stopTimer = null; }
-                    r.start();
-                } catch (e) {
-                    console.error('Error starting speech recognition', e);
-                }
+                // start shared recognition for the modal conversation
+                try { startSharedRecognitionForConversation(modal); } catch (e) { console.error('Failed to start recognition for modal', e); alert('Failed to start microphone'); }
             };
             // Pre-fill input with suggested prompt if student hasn't written an answer
             if ((type === 'recall' && (!recallResponse || recallResponse.trim().length < 10)) || (type === 'card' && (!card || !(card.front || card.back)))) {
