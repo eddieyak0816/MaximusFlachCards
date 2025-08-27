@@ -334,6 +334,42 @@
             };
         }
 
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // ignore typing in inputs/textareas
+            const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+            if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) return;
+
+            // G -> Get Growth Feedback (only on Active Recall step)
+            if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'g') {
+                try { if (document.getElementById('step2') && !document.getElementById('step2').classList.contains('hidden')) analyzeRecallAnswers(); } catch(e){}
+            }
+            // C -> Continue (Ready for Prompt Engineering)
+            if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'c') {
+                try { const cont = document.getElementById('continueButton'); if (cont && !cont.classList.contains('hidden')) cont.click(); } catch(e){}
+            }
+            // 1/2/3 -> Rate card when studying (step 3 active)
+            if (!e.ctrlKey && !e.metaKey && !e.altKey && ['1','2','3'].includes(e.key)) {
+                try {
+                    const step3 = document.getElementById('step3');
+                    if (step3 && !step3.classList.contains('hidden')) {
+                        if (e.key === '1') rateCard('easy');
+                        if (e.key === '2') rateCard('medium');
+                        if (e.key === '3') rateCard('hard');
+                    }
+                } catch(e){}
+            }
+            // Esc -> close visible modals
+            if (e.key === 'Escape') {
+                try { document.getElementById('flashcardModal') && document.getElementById('flashcardModal').remove(); } catch(e){}
+                try { document.getElementById('categoryModal') && document.getElementById('categoryModal').remove(); } catch(e){}
+            }
+            // Shift+/ -> toggle AI Setup
+            if (e.shiftKey && e.key === '?') {
+                try { toggleAiSetup(); } catch(e){}
+            }
+        });
+
         // Fixed API testing function with better visual feedback
         async function testApiKeys() {
             console.log('🧪 testApiKeys function called!');
@@ -1515,12 +1551,13 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         </div>
                         <div id="categoryManagerContent"></div>
                         <div style="margin-top:12px;display:flex;justify-content:space-between;">
-                            <div>
-                                <input id="newCategoryName" placeholder="New category name" style="padding:8px;border:1px solid #ddd;border-radius:6px;min-width:220px;">
-                                <button onclick="addCategory()" style="margin-left:8px;padding:8px 12px;background:#10b981;color:white;border:none;border-radius:6px;cursor:pointer;">Add</button>
+                                <div>
+                                    <input id="newCategoryName" placeholder="New category name" style="padding:8px;border:1px solid #ddd;border-radius:6px;min-width:220px;">
+                                    <button onclick="addCategory()" style="margin-left:8px;padding:8px 12px;background:#10b981;color:white;border:none;border-radius:6px;cursor:pointer;">Add</button>
+                                </div>
+                                <!-- Close X positioned like All Cards modal -->
+                                <button onclick="document.getElementById('categoryModal').remove()" style="position:absolute;top:28px;right:40px;font-size:1.5rem;background:#eee;border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;">&times;</button>
                             </div>
-                            <button onclick="document.getElementById('categoryModal').remove()" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:6px;">Close</button>
-                        </div>
                     </div>
                 `;
                 document.body.appendChild(modal);
@@ -2260,6 +2297,11 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 for (let i = 0; i < 4; i++) {
                     const feedbackDiv = document.getElementById(`feedback${i}`);
                     const response = responses[i];
+                    // Initialize per-question hint click count container
+                    if (!videoData._hintClicks) videoData._hintClicks = [0,0,0,0];
+                    // Increment click count for overall analyze action (treat this as one request)
+                    videoData._hintClicks[i] = (videoData._hintClicks[i] || 0) + 1;
+                    const hintLevel = Math.min(3, videoData._hintClicks[i]); // 1..3
                     
                     console.log(`Generating feedback for question ${i}:`, response);
                     
@@ -2277,10 +2319,30 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     `;
                     feedbackDiv.classList.remove('hidden');
                     
-                    // Generate REAL AI feedback that compares to transcript
-                    const feedback = await generateRealAIFeedback(i, response, videoData);
+                    // Generate REAL AI feedback that compares to transcript and tailors hints by hintLevel
+                    const feedback = await generateRealAIFeedback(i, response, videoData, hintLevel);
                     feedbackDiv.innerHTML = feedback;
-                    
+
+                    // Track attempts: increment per-question attempt count
+                    if (!videoData._attempts) videoData._attempts = [0,0,0,0];
+                    videoData._attempts[i] = (videoData._attempts[i] || 0) + 1;
+                    const attemptCount = videoData._attempts[i];
+
+                    // Show Reveal button only after third hint (hintLevel 3) OR after second attempt
+                    if (hintLevel >= 3 || attemptCount >= 2) {
+                        try {
+                            const revealBtnId = `revealBtn-${i}`;
+                            if (!document.getElementById(revealBtnId)) {
+                                const btn = document.createElement('button');
+                                btn.id = revealBtnId;
+                                btn.textContent = 'Reveal answer';
+                                btn.className = 'mt-3 bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm';
+                                btn.onclick = function() { revealAnswer(i, responses[i], videoData); };
+                                feedbackDiv.appendChild(btn);
+                            }
+                        } catch (e) { console.error('Error adding reveal button', e); }
+                    }
+
                     // Add delay between feedback generations to show it's working
                     await new Promise(resolve => setTimeout(resolve, 1500));
                 }
@@ -2304,7 +2366,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
         }
 
         // Generate REAL AI feedback that compares student response to transcript
-        async function generateRealAIFeedback(questionIndex, response, videoData) {
+    async function generateRealAIFeedback(questionIndex, response, videoData, hintLevel = 1) {
             const geminiKey = localStorage.getItem('gemini_api_key');
 
             if (!geminiKey) {
@@ -2328,11 +2390,19 @@ Make sure each flashcard tests something specific from the transcript content.`;
             // If there's no meaningful overlap, instruct model to be explicitly honest and avoid praise.
             const honestyInstruction = (overlap < 1) ? 'Start with an honest note: the student answer does not match the transcript. Do NOT offer praise. Focus on evidence from the transcript and provide hints.' : 'If appropriate, begin with a brief praise sentence supported by the student answer.';
 
-            const hintGuidance = `After the opening honesty/praise and a concise correction, give two graduated hints (broad -> specific) that do NOT reveal the missing detail, then one short leading question to nudge retrieval, and finish with a micro-practice instruction (<60s). Keep overall reply concise.`;
+            // Tailor hint specificity by hintLevel: 1=subtle, 2=clearer, 3=very specific
+            let hintGuidance = '';
+            if (hintLevel <= 1) {
+                hintGuidance = 'Give one subtle hint: a gentle nudge that points to the right area without specifics. Then provide one broad retrieval question.';
+            } else if (hintLevel === 2) {
+                hintGuidance = 'Give two hints: first a broader contextual hint, second a clearer cue that narrows the likely answer, but do not fully reveal it.';
+            } else {
+                hintGuidance = 'Provide one clear, specific hint that narrows to the exact detail (but still stop short of stating the full answer if possible), then offer a micro-practice to recall it.';
+            }
 
             const transcriptSnippet = transcript ? `Transcript excerpt: ${transcript}` : 'Transcript: (use available transcript to check details)';
 
-            const prompt = `${toneInstruction} ${honestyInstruction} ${hintGuidance}\n\nStudent answer: "${response}"\n\n${transcriptSnippet}\n\nCompare the student's answer to the transcript and respond directly to the student (speak as "you"). If there is no evidence in the transcript to support praise, start with an honest clear note indicating the mismatch. Then give a short correction or missing point (if any), two hints to prompt recall without revealing the answer, one leading question, and one micro-practice instruction. Keep output under ~200 words and avoid long explanations.`;
+            const prompt = `${toneInstruction} ${honestyInstruction} ${hintGuidance}\n\nStudent answer: "${response}"\n\n${transcriptSnippet}\n\nCompare the student's answer to the transcript and respond directly to the student (speak as "you"). Respect the hint guidance level: subtle -> clearer -> specific. Avoid long explanations and keep output under ~200 words.`;
 
             try {
                 const response_ai = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
@@ -2604,10 +2674,19 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                     <input id="voicePitchBack" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:220px;"/>
                                 </div>
                             </div>
-                            <div class="flex justify-center space-x-3 mt-4">
-                                <button onclick="rateCard('hard')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">😰 Hard <span class="ml-2 text-xs">${getProjectedLabel(card,'hard')}</span></button>
-                                <button onclick="rateCard('medium')" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm">🤔 Medium <span class="ml-2 text-xs">${getProjectedLabel(card,'medium')}</span></button>
-                                <button onclick="rateCard('easy')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm">😊 Easy <span class="ml-2 text-xs">${getProjectedLabel(card,'easy')}</span></button>
+                            <div class="flex justify-center space-x-6 mt-4">
+                                <div class="flex flex-col items-center">
+                                    <button onclick="rateCard('easy')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm">😊 Easy <span class="ml-2 text-xs">${getProjectedLabel(card,'easy')}</span></button>
+                                    <div class="text-xs text-gray-500 mt-1">(1)</div>
+                                </div>
+                                <div class="flex flex-col items-center">
+                                    <button onclick="rateCard('medium')" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm">🤔 Medium <span class="ml-2 text-xs">${getProjectedLabel(card,'medium')}</span></button>
+                                    <div class="text-xs text-gray-500 mt-1">(2)</div>
+                                </div>
+                                <div class="flex flex-col items-center">
+                                    <button onclick="rateCard('hard')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">😰 Hard <span class="ml-2 text-xs">${getProjectedLabel(card,'hard')}</span></button>
+                                    <div class="text-xs text-gray-500 mt-1">(3)</div>
+                                </div>
                             </div>
                             <button onclick="flipCardBack()" class="mt-4 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">← Back to Question</button>
                         </div>
@@ -2751,6 +2830,37 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     if (Date.now() - start > timeoutMs) { clearInterval(iv); done(); }
                 }, 100);
             });
+        }
+
+        // Reveal the best matching transcript sentence for a question (gated behind rules)
+        function revealAnswer(questionIndex, response, videoData) {
+            const transcript = (videoData && videoData.transcript) ? String(videoData.transcript) : '';
+            const feedbackDiv = document.getElementById(`feedback${questionIndex}`);
+            if (!feedbackDiv) return;
+
+            if (!transcript) {
+                feedbackDiv.innerHTML += `<div class="mt-2 text-sm text-red-600">No transcript available to reveal.</div>`;
+                return;
+            }
+
+            // Split transcript into sentences and look for best overlap
+            const sentences = transcript.split(/(?<=[.!?])\s+/g).filter(Boolean);
+            const tokenize = s => String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(Boolean);
+            const respTokens = new Set(tokenize(response).filter(t=>t.length>2));
+            let best = {score:0, text:''};
+            for (const s of sentences) {
+                const st = tokenize(s).filter(t=>t.length>2);
+                let score = 0; for (const t of st) if (respTokens.has(t)) score++;
+                if (score > best.score) best = {score, text: s};
+            }
+
+            if (best.score === 0) {
+                // Fallback: show a short excerpt near first contentful sentence
+                const excerpt = sentences.slice(0,2).join(' ');
+                feedbackDiv.innerHTML += `<div class="mt-2 text-sm text-gray-700"><strong>Transcript hint:</strong> ${escapeHtml(excerpt)}</div>`;
+            } else {
+                feedbackDiv.innerHTML += `<div class="mt-2 text-sm text-gray-700"><strong>Transcript hint:</strong> ${escapeHtml(best.text)}</div>`;
+            }
         }
 
         function flipCard() {
