@@ -23,6 +23,9 @@
         <div class="text-center mb-8">
             <h1 class="text-4xl font-bold text-white mb-2">🧠 Prompt Engineering Learning Lab</h1>
             <p class="text-blue-100 text-lg">Learn prompt engineering by creating smart flashcards from videos!</p>
+                <div style="position:absolute;right:28px;top:28px;">
+                    <button id="openSettingsBtn" onclick="openSettingsModal()" class="bg-white text-blue-600 px-3 py-1 rounded shadow-sm">Settings</button>
+                </div>
         </div>
 
         <!-- Main Content -->
@@ -153,22 +156,7 @@
                         <button onclick="document.getElementById('csvFileInput').click()" class="text-sm text-blue-600 hover:underline ml-2">Import CSV</button>
                         <input id="csvFileInput" type="file" accept=".csv,text/csv" style="display:none" onchange="handleCSVFile(event)" />
                     </div>
-                        <div class="mt-3 text-sm text-gray-700" style="display:flex;align-items:center;gap:12px;">
-                            <label class="mr-3">AI Tone: <select id="globalAiToneSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:160px;">
-                                <option value="warm">Warm (default)</option>
-                                <option value="concise">Concise</option>
-                                <option value="direct">Direct</option>
-                            </select></label>
-                            <span class="text-xs text-gray-500">Choose the Coach tone used for Active Recall feedback.</span>
-                            <div style="display:inline-flex;align-items:center;gap:8px;margin-left:12px;">
-                                <label style="margin-right:6px;font-size:0.95rem;">Humor:</label>
-                                <select id="globalHumorSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:120px;">
-                                    <option value="off">None</option>
-                                    <option value="light">Light (small jokes)</option>
-                                    <option value="playful">Playful (funny examples)</option>
-                                </select>
-                            </div>
-                        </div>
+                        <!-- AI Tone and Humor moved into Settings modal -->
                 
                     <!-- Category quick-review panel -->
                     <div id="categoryReviewPanel" class="mt-4 p-3 bg-white rounded-lg border">
@@ -215,7 +203,8 @@
 
                     </div>
                 </div>
-                
+                <!-- Voice & speech settings moved to Settings modal -->
+
                 <button onclick="startRecall()" class="w-full mt-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors">
                     Start Active Recall Session 🧠
                 </button>
@@ -876,12 +865,12 @@
                 humorLine = 'Include playful, safe humor or a short quirky analogy on the back to make cards more engaging (keep it brief and relevant).';
             }
 
+            // Infer a short topic from the transcript to provide a neutral 'Video About' line
+            const inferred = inferVideoTopic(transcript) || 'the topic';
             return `Create educational flashcards from this video transcript. 
 
-VIDEO INFO:
-- Title: ${videoData.title || 'Educational Video'}
-- Subject: ${videoData.subject || 'General'}
-- Length: ${transcript.split(' ').length} words
+VIDEO ABOUT: ${inferred}
+Length: ${transcript.split(' ').length} words
 
 TRANSCRIPT:
 ${transcript}
@@ -906,6 +895,19 @@ BACK: [Answer with explanation and emoji]
 [Continue for all flashcards...]
 
 Make sure each flashcard tests something specific from the transcript content.`;
+        }
+
+        // Heuristic: infer a short topic from the transcript by finding the most frequent non-stopword
+        function inferVideoTopic(transcript) {
+            if (!transcript) return '';
+            const stop = new Set(['the','and','a','to','of','in','is','that','it','for','on','with','as','are','this','be','by','an','or','we','you']);
+            const words = transcript.toLowerCase().replace(/[^a-z\s]/g,' ').split(/\s+/).filter(w=>w.length>3 && !stop.has(w));
+            if (!words.length) return '';
+            const freq = {};
+            words.forEach(w => freq[w] = (freq[w]||0)+1);
+            const sorted = Object.keys(freq).sort((a,b) => freq[b]-freq[a]);
+            // return first one or two words joined
+            return sorted.slice(0,2).map(s => s.replace(/\s+/g,' ')).join(' ').split(' ').slice(0,3).join(' ');
         }
 
         // Parse LLM response into flashcard objects
@@ -2216,7 +2218,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const questions = [
                 {
                     type: 'open',
-                    question: `Tell me everything you can remember about "${videoData.title}". Don't worry about being perfect - just write down whatever comes to mind!`,
+                    question: `Tell me everything you can remember about the video. Don't worry about being perfect - just write down whatever comes to mind!`,
                     placeholder: 'Start typing everything you remember...'
                 },
                 {
@@ -2263,7 +2265,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
         // Return the recall question text by index (kept in one place so chat can reference it)
         function getRecallQuestionText(index) {
             const questions = [
-                `Tell me everything you can remember about "${videoData?.title || 'the video'}". Don't worry about being perfect - just write down whatever comes to mind!`,
+                `Tell me everything you can remember about the video. Don't worry about being perfect - just write down whatever comes to mind!`,
                 'What was the main point or key takeaway from the video?',
                 'Can you remember any specific examples, numbers, or details that were mentioned?',
                 'How does this connect to what you already knew about the topic?'
@@ -2682,15 +2684,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                 <button data-play-question="${escapeJs(card.front || '')}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Question</button>
                                 <button data-stop-audio class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
                             </div>
-                            <div class="mb-3 text-sm text-gray-600">
-                                <label style="display:block;margin-bottom:6px;">Voice: <select id="voiceSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:180px;"></select></label>
-                                <div style="display:flex;gap:12px;align-items:center;">
-                                    <label>Rate: <span id="voiceRateLabel" style="font-weight:600;">1</span></label>
-                                    <input id="voiceRate" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:220px;"/>
-                                    <label>Pitch: <span id="voicePitchLabel" style="font-weight:600;">1</span></label>
-                                    <input id="voicePitch" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:220px;"/>
-                                </div>
-                            </div>
+                            <!-- voice controls moved to Step 1 global settings -->
                             <div>
                                 <button onclick="flipCard()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">Show Answer</button>
                             </div>
@@ -2702,15 +2696,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                 <button data-play-qa data-play-qa-q="${escapeJs(card.front || '')}" data-play-qa-a="${escapeJs(card.back || '')}" class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded text-sm mr-2">🔁 Play Q→A</button>
                                 <button data-stop-audio class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
                             </div>
-                            <div class="mb-3 text-sm text-gray-600">
-                                <label style="display:block;margin-bottom:6px;">Voice: <select id="voiceSelectBack" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:180px;"></select></label>
-                                <div style="display:flex;gap:12px;align-items:center;">
-                                    <label>Rate: <span id="voiceRateLabelBack" style="font-weight:600;">1</span></label>
-                                    <input id="voiceRateBack" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:220px;"/>
-                                    <label>Pitch: <span id="voicePitchLabelBack" style="font-weight:600;">1</span></label>
-                                    <input id="voicePitchBack" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:220px;"/>
-                                </div>
-                            </div>
+                            <!-- voice controls moved to Step 1 global settings -->
                             <div class="flex justify-center space-x-6 mt-4">
                                 <div class="flex flex-col items-center">
                                     <button onclick="rateCard('hard')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">😰 Hard <span class="ml-2 text-xs">${getProjectedLabel(card,'hard')}</span></button>
@@ -3037,8 +3023,25 @@ Make sure each flashcard tests something specific from the transcript content.`;
             if (!('speechSynthesis' in window)) return;
             const sel = document.getElementById('voiceSelect');
             const selBack = document.getElementById('voiceSelectBack');
-            if (!sel && !selBack) return;
+            const globalSel = document.getElementById('globalVoiceSelect');
+            const rateGlobal = document.getElementById('globalVoiceRate');
+            const pitchGlobal = document.getElementById('globalVoicePitch');
+            const settingsSel = document.getElementById('settingsVoiceSelect');
+            // if none of the expected selects exist yet, still attempt to populate voices when they become available
             const voices = window.speechSynthesis.getVoices() || [];
+            // If voices not loaded yet, retry a few times
+            if (!voices || voices.length === 0) {
+                window._voicePopulateRetries = (window._voicePopulateRetries || 0) + 1;
+                if (window._voicePopulateRetries <= 12) {
+                    // try again shortly
+                    setTimeout(populateVoiceList, 250);
+                } else {
+                    console.debug('populateVoiceList: no voices available after retries');
+                }
+                // also attach onvoiceschanged to ensure we populate when browser fires it
+                try { if (speechSynthesis && typeof speechSynthesis.onvoiceschanged !== 'undefined') speechSynthesis.onvoiceschanged = function() { try { populateVoiceList(); } catch(e){} }; } catch(e) {}
+                return;
+            }
             // Helper to fill a select
             function fillSelect(s) {
                 if (!s) return;
@@ -3054,39 +3057,50 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
             fillSelect(sel);
             fillSelect(selBack);
+            fillSelect(globalSel);
+            fillSelect(settingsSel);
 
             // restore saved voice if any
             const saved = localStorage.getItem('ttsVoice');
-            if (saved) try { if (sel) sel.value = saved; if (selBack) selBack.value = saved; } catch(e) {}
+            if (saved) try { if (sel) sel.value = saved; if (selBack) selBack.value = saved; if (globalSel) globalSel.value = saved; if (settingsSel) settingsSel.value = saved; } catch(e) {}
 
-            // restore saved AI tone from global selector if present
-            const globalTone = document.getElementById('globalAiToneSelect');
+            // restore saved AI tone/humor into settings modal elements if present
+            const settingsTone = document.getElementById('settingsAiTone');
             const savedTone = localStorage.getItem('aiFeedbackTone') || 'warm';
-            try { if (globalTone) globalTone.value = savedTone; } catch(e) {}
-            // restore saved humor preference only if it exists (keep default placeholder otherwise)
-            const globalHumor = document.getElementById('globalHumorSelect');
+            try { if (settingsTone) settingsTone.value = savedTone; } catch(e) {}
+            const settingsHumor = document.getElementById('settingsHumor');
             const savedHumor = localStorage.getItem('flashcardHumor');
-            try { if (globalHumor && savedHumor !== null && savedHumor !== undefined) globalHumor.value = savedHumor; } catch(e) {}
+            try { if (settingsHumor && savedHumor !== null && savedHumor !== undefined) settingsHumor.value = savedHumor; } catch(e) {}
 
             // wire change handlers to persist settings
-            if (sel) sel.onchange = function() { localStorage.setItem('ttsVoice', sel.value || ''); };
-            if (selBack) selBack.onchange = function() { localStorage.setItem('ttsVoice', selBack.value || ''); };
-            const rateEl = document.getElementById('voiceRate');
-            const pitchEl = document.getElementById('voicePitch');
+            if (sel) sel.onchange = function() { localStorage.setItem('ttsVoice', sel.value || ''); if (globalSel) globalSel.value = sel.value || ''; };
+            if (selBack) selBack.onchange = function() { localStorage.setItem('ttsVoice', selBack.value || ''); if (globalSel) globalSel.value = selBack.value || ''; };
+            if (globalSel) globalSel.onchange = function() { localStorage.setItem('ttsVoice', globalSel.value || ''); if (sel) sel.value = globalSel.value || ''; if (selBack) selBack.value = globalSel.value || ''; if (settingsSel) settingsSel.value = globalSel.value || ''; };
+            const settingsVoice = document.getElementById('settingsVoiceSelect');
+            if (settingsVoice) settingsVoice.onchange = function() { localStorage.setItem('ttsVoice', settingsVoice.value || ''); if (globalSel) globalSel.value = settingsVoice.value || ''; if (sel) sel.value = settingsVoice.value || ''; if (selBack) selBack.value = settingsVoice.value || ''; };
+            const rateEl = document.getElementById('voiceRate') || document.getElementById('globalVoiceRate') || document.getElementById('settingsVoiceRate');
+            const pitchEl = document.getElementById('voicePitch') || document.getElementById('globalVoicePitch') || document.getElementById('settingsVoicePitch');
             const rateElBack = document.getElementById('voiceRateBack');
             const pitchElBack = document.getElementById('voicePitchBack');
             if (rateEl) {
                 const savedRate = localStorage.getItem('ttsRate');
                 rateEl.value = savedRate ? savedRate : rateEl.value;
-                rateEl.oninput = function() { localStorage.setItem('ttsRate', rateEl.value); document.getElementById('voiceRateLabel') && (document.getElementById('voiceRateLabel').textContent = rateEl.value); };
-                document.getElementById('voiceRateLabel') && (document.getElementById('voiceRateLabel').textContent = rateEl.value);
+                rateEl.oninput = function() { localStorage.setItem('ttsRate', rateEl.value); if (document.getElementById('voiceRateLabel')) document.getElementById('voiceRateLabel').textContent = rateEl.value; if (rateGlobal) rateGlobal.value = rateEl.value; if (document.getElementById('settingsVoiceRate')) document.getElementById('settingsVoiceRate').value = rateEl.value; };
+                if (document.getElementById('voiceRateLabel')) document.getElementById('voiceRateLabel').textContent = rateEl.value;
+                if (rateGlobal) { const savedRateG = localStorage.getItem('ttsRate'); if (savedRateG) rateGlobal.value = savedRateG; rateGlobal.oninput = function() { localStorage.setItem('ttsRate', rateGlobal.value); if (document.getElementById('voiceRateLabel')) document.getElementById('voiceRateLabel').textContent = rateGlobal.value; } }
             }
             if (pitchEl) {
                 const savedPitch = localStorage.getItem('ttsPitch');
                 pitchEl.value = savedPitch ? savedPitch : pitchEl.value;
-                pitchEl.oninput = function() { localStorage.setItem('ttsPitch', pitchEl.value); document.getElementById('voicePitchLabel') && (document.getElementById('voicePitchLabel').textContent = pitchEl.value); };
-                document.getElementById('voicePitchLabel') && (document.getElementById('voicePitchLabel').textContent = pitchEl.value);
+                pitchEl.oninput = function() { localStorage.setItem('ttsPitch', pitchEl.value); if (document.getElementById('voicePitchLabel')) document.getElementById('voicePitchLabel').textContent = pitchEl.value; if (pitchGlobal) pitchGlobal.value = pitchEl.value; if (document.getElementById('settingsVoicePitch')) document.getElementById('settingsVoicePitch').value = pitchEl.value; };
+                if (document.getElementById('voicePitchLabel')) document.getElementById('voicePitchLabel').textContent = pitchEl.value;
+                if (pitchGlobal) { const savedPitchG = localStorage.getItem('ttsPitch'); if (savedPitchG) pitchGlobal.value = savedPitchG; pitchGlobal.oninput = function() { localStorage.setItem('ttsPitch', pitchGlobal.value); if (document.getElementById('voicePitchLabel')) document.getElementById('voicePitchLabel').textContent = pitchGlobal.value; } }
             }
+            // also hook settings modal tone/humor save handlers if present
+            try {
+                if (document.getElementById('settingsAiTone')) document.getElementById('settingsAiTone').onchange = function() { localStorage.setItem('aiFeedbackTone', this.value || 'warm'); };
+                if (document.getElementById('settingsHumor')) document.getElementById('settingsHumor').onchange = function() { localStorage.setItem('flashcardHumor', this.value || 'off'); };
+            } catch(e) {}
             // back controls sync with front controls for simplicity
             if (rateElBack) {
                 const savedRate = localStorage.getItem('ttsRate');
@@ -3416,6 +3430,72 @@ Make sure each flashcard tests something specific from the transcript content.`;
     // Ensure openAiChatModal is accessible globally
     window.openAiChatModal = openAiChatModal;
 
+        // Settings modal: opened from main page Settings button
+        function openSettingsModal() {
+            // remove existing
+            const prev = document.getElementById('settingsModal'); if (prev) prev.remove();
+            const m = document.createElement('div');
+            m.id = 'settingsModal'; m.style.position = 'fixed'; m.style.top='0'; m.style.left='0'; m.style.width='100vw'; m.style.height='100vh'; m.style.background='rgba(0,0,0,0.5)'; m.style.zIndex='12000'; m.style.display='flex'; m.style.justifyContent='center'; m.style.alignItems='center';
+            m.innerHTML = `
+                <div style="background:white;max-width:640px;width:92vw;border-radius:12px;padding:16px;box-sizing:border-box;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <h3 style="margin:0;font-size:1.1rem;">Settings</h3>
+                        <button id="settingsClose" style="background:#eee;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;">Close</button>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;margin-bottom:6px;">AI Tone: <select id="settingsAiTone" style="padding:6px;border-radius:6px;border:1px solid #ccc;min-width:180px;"><option value="warm">Warm (default)</option><option value="concise">Concise</option><option value="direct">Direct</option></select></label>
+                        <label style="display:block;margin-bottom:6px;">Humor: <select id="settingsHumor" style="padding:6px;border-radius:6px;border:1px solid #ccc;min-width:180px;"><option value="off">None</option><option value="light">Light</option><option value="playful">Playful</option></select></label>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;margin-bottom:6px;">Voice</label>
+                        <select id="settingsVoiceSelect" style="padding:6px;border-radius:6px;border:1px solid #ccc;min-width:100%;margin-bottom:10px;"></select>
+                        <div style="display:flex;gap:12px;align-items:center;">
+                            <div style="flex:1"><label style="display:block;font-size:0.9rem;margin-bottom:6px;">Rate</label><input id="settingsVoiceRate" type="range" min="0.5" max="2" step="0.1" value="1" style="width:100%;"/></div>
+                            <div style="flex:1"><label style="display:block;font-size:0.9rem;margin-bottom:6px;">Pitch</label><input id="settingsVoicePitch" type="range" min="0.5" max="2" step="0.1" value="1" style="width:100%;"/></div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
+                        <button id="playSampleBtn" style="background:#10b981;color:#fff;padding:8px 12px;border-radius:6px;border:none;">Play sample</button>
+                        <button id="saveSettingsBtn" style="background:#2563eb;color:#fff;padding:8px 12px;border-radius:6px;border:none;">Save</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(m);
+            document.getElementById('settingsClose').onclick = () => { m.remove(); };
+            document.getElementById('saveSettingsBtn').onclick = () => {
+                try {
+                    const tone = document.getElementById('settingsAiTone').value; localStorage.setItem('aiFeedbackTone', tone);
+                    const humor = document.getElementById('settingsHumor').value; localStorage.setItem('flashcardHumor', humor);
+                    const voice = document.getElementById('settingsVoiceSelect').value || ''; localStorage.setItem('ttsVoice', voice);
+                    const rate = document.getElementById('settingsVoiceRate').value; localStorage.setItem('ttsRate', rate);
+                    const pitch = document.getElementById('settingsVoicePitch').value; localStorage.setItem('ttsPitch', pitch);
+                } catch(e) { console.error(e); }
+                m.remove();
+            };
+            // Play sample using current settings
+            document.getElementById('playSampleBtn').onclick = () => {
+                try {
+                    const txt = 'This is a sample voice. Adjust rate and pitch to hear changes.';
+                    // prefer settings controls, fall back to localStorage
+                    const settingsVoice = document.getElementById('settingsVoiceSelect') ? document.getElementById('settingsVoiceSelect').value : (localStorage.getItem('ttsVoice') || '');
+                    const settingsRate = document.getElementById('settingsVoiceRate') ? Number(document.getElementById('settingsVoiceRate').value) : Number(localStorage.getItem('ttsRate') || 1);
+                    const settingsPitch = document.getElementById('settingsVoicePitch') ? Number(document.getElementById('settingsVoicePitch').value) : Number(localStorage.getItem('ttsPitch') || 1);
+                    const opts = { voiceName: settingsVoice, rate: settingsRate, pitch: settingsPitch };
+                    speakTextWithOptions(txt, opts);
+                } catch (e) { console.error('Play sample failed', e); alert('Could not play sample voice.'); }
+            };
+            // populate current values
+            try {
+                const savedTone = localStorage.getItem('aiFeedbackTone') || 'warm'; if (document.getElementById('settingsAiTone')) document.getElementById('settingsAiTone').value = savedTone;
+                const savedHumor = localStorage.getItem('flashcardHumor'); if (document.getElementById('settingsHumor') && savedHumor) document.getElementById('settingsHumor').value = savedHumor;
+                const savedVoice = localStorage.getItem('ttsVoice'); if (document.getElementById('settingsVoiceSelect') && savedVoice) { /* value will be set by populateVoiceList when voices load */ }
+                const savedRate = localStorage.getItem('ttsRate'); if (savedRate && document.getElementById('settingsVoiceRate')) document.getElementById('settingsVoiceRate').value = savedRate;
+                const savedPitch = localStorage.getItem('ttsPitch'); if (savedPitch && document.getElementById('settingsVoicePitch')) document.getElementById('settingsVoicePitch').value = savedPitch;
+            } catch(e){}
+            // call populateVoiceList to fill the settings select
+            try { populateVoiceList(); } catch(e){}
+        }
+
         function appendAiMessage(who, text) {
             const conv = document.getElementById('aiChatConversation');
             if (!conv) return;
@@ -3442,8 +3522,16 @@ Make sure each flashcard tests something specific from the transcript content.`;
             // If user message is very short, ask AI to clarify before answering fully
             const shortMsg = message.trim().length < 15;
 
-            // Build system/context prompt
-            const systemPrefix = `Context:\n${context}\n\nRespond as a friendly study coach. If the student message lacks detail, ask one concise clarifying question instead of providing a full answer.`;
+            // Build system/context prompt and explicitly inform the AI that the student just watched a video
+            let videoNote = '';
+            try {
+                if (window.videoData) {
+                    const hasUrl = window.videoData.url && String(window.videoData.url).trim().length > 0;
+                    const hasTranscriptFlag = !!window.videoData.hasTranscript;
+                    videoNote = `Student has just watched a video. URL provided: ${hasUrl ? 'yes' : 'no'}. Transcript provided: ${hasTranscriptFlag ? 'yes' : 'no'}.`;
+                }
+            } catch(e) { videoNote = ''; }
+            const systemPrefix = `Context:\n${context}\n\n${videoNote}\n\nRespond as a friendly study coach. If the student message lacks detail, ask one concise clarifying question instead of providing a full answer.`;
 
             try {
                 if (geminiKey) {
@@ -3491,7 +3579,11 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
             // speak the reply and when finished, restart listening if inline conversation
             try {
-                const opts = (document.getElementById('voiceSelect') && document.getElementById('voiceSelect').value) ? { voiceName: document.getElementById('voiceSelect').value, rate: Number(document.getElementById('voiceRate') ? document.getElementById('voiceRate').value : 1), pitch: Number(document.getElementById('voicePitch') ? document.getElementById('voicePitch').value : 1) } : null;
+                // prefer settings modal values, fall back to localStorage
+                const voiceName = (document.getElementById('settingsVoiceSelect') && document.getElementById('settingsVoiceSelect').value) ? document.getElementById('settingsVoiceSelect').value : (localStorage.getItem('ttsVoice') || '');
+                const rateVal = (document.getElementById('settingsVoiceRate') && document.getElementById('settingsVoiceRate').value) ? Number(document.getElementById('settingsVoiceRate').value) : Number(localStorage.getItem('ttsRate') || 1);
+                const pitchVal = (document.getElementById('settingsVoicePitch') && document.getElementById('settingsVoicePitch').value) ? Number(document.getElementById('settingsVoicePitch').value) : Number(localStorage.getItem('ttsPitch') || 1);
+                const opts = voiceName ? { voiceName, rate: rateVal, pitch: pitchVal } : null;
                 const utter = speakTextWithOptions(aiText, opts);
                 // If modal is an inline conv object, after speaking, start shared recognition again to continue the conversation
                 if (utter && modal && modal.convEl) {
