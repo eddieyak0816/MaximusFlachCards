@@ -139,24 +139,35 @@
                             <div class="text-sm text-gray-600">Studied Today</div>
                         </div>
                     </div>
-                    <div class="flex space-x-2">
+                        <div class="flex space-x-2">
                         <button onclick="startReviewSession()" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm">
                             📖 Review Due Cards
                         </button>
                         <button onclick="showAllCards()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm">
                             📋 View All Cards
                         </button>
+                        <button onclick="openCreateCardModal()" class="bg-green-400 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm">
+                            ➕ Create Card
+                        </button>
                         <button onclick="exportAllFlashcardsToCSV(true)" class="text-sm text-blue-600 hover:underline ml-2">Export CSV</button>
                         <button onclick="document.getElementById('csvFileInput').click()" class="text-sm text-blue-600 hover:underline ml-2">Import CSV</button>
                         <input id="csvFileInput" type="file" accept=".csv,text/csv" style="display:none" onchange="handleCSVFile(event)" />
                     </div>
-                        <div class="mt-3 text-sm text-gray-700">
+                        <div class="mt-3 text-sm text-gray-700" style="display:flex;align-items:center;gap:12px;">
                             <label class="mr-3">AI Tone: <select id="globalAiToneSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:160px;">
                                 <option value="warm">Warm (default)</option>
                                 <option value="concise">Concise</option>
                                 <option value="direct">Direct</option>
                             </select></label>
                             <span class="text-xs text-gray-500">Choose the Coach tone used for Active Recall feedback.</span>
+                            <div style="display:inline-flex;align-items:center;gap:8px;margin-left:12px;">
+                                <label style="margin-right:6px;font-size:0.95rem;">Humor:</label>
+                                <select id="globalHumorSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:120px;">
+                                    <option value="off">None</option>
+                                    <option value="light">Light (small jokes)</option>
+                                    <option value="playful">Playful (funny examples)</option>
+                                </select>
+                            </div>
                         </div>
                 
                     <!-- Category quick-review panel -->
@@ -353,9 +364,10 @@
                 try {
                     const step3 = document.getElementById('step3');
                     if (step3 && !step3.classList.contains('hidden')) {
-                        if (e.key === '1') rateCard('easy');
+                        // Remapped: 1 -> Hard, 2 -> Medium, 3 -> Easy
+                        if (e.key === '1') rateCard('hard');
                         if (e.key === '2') rateCard('medium');
-                        if (e.key === '3') rateCard('hard');
+                        if (e.key === '3') rateCard('easy');
                     }
                 } catch(e){}
             }
@@ -856,6 +868,14 @@
 
         // Create a well-structured prompt for LLM
         function createFlashcardPrompt(transcript, videoData) {
+            const humor = localStorage.getItem('flashcardHumor') || 'off';
+            let humorLine = '';
+            if (humor === 'light') {
+                humorLine = 'Use light, inoffensive humor or a small memorable joke on the back to make cards more memorable.';
+            } else if (humor === 'playful') {
+                humorLine = 'Include playful, safe humor or a short quirky analogy on the back to make cards more engaging (keep it brief and relevant).';
+            }
+
             return `Create educational flashcards from this video transcript. 
 
 VIDEO INFO:
@@ -872,6 +892,7 @@ INSTRUCTIONS:
 3. Make questions specific to the actual content (not generic)
 4. Use engaging language with emojis
 5. Include explanations of why concepts are important
+${humorLine ? `6. ${humorLine}\n` : ''}
 
 FORMAT (return exactly in this format):
 FLASHCARD 1:
@@ -2642,8 +2663,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         <div id="cardFront" class="card-side">
                             <div class="text-lg font-semibold text-gray-800 mb-4">${card.front || ''}</div>
                             <div class="mb-3">
-                                <button onclick="playCardText(\`${escapeJs(card.front || '')}\`)" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Question</button>
-                                <button onclick="stopSpeech()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
+                                <button data-play-question="${escapeJs(card.front || '')}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Question</button>
+                                <button data-stop-audio class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
                             </div>
                             <div class="mb-3 text-sm text-gray-600">
                                 <label style="display:block;margin-bottom:6px;">Voice: <select id="voiceSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:180px;"></select></label>
@@ -2661,9 +2682,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         <div id="cardBack" class="card-side hidden">
                             <div class="text-lg font-semibold text-gray-800 mb-4">${card.back || ''}</div>
                             <div class="mb-3">
-                                <button onclick="playCardText(\`${escapeJs(card.back || '')}\`)" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Answer</button>
-                                <button onclick="playCardSequential(\`${escapeJs(card.front || '')}\`, \`${escapeJs(card.back || '')}\`)" class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded text-sm mr-2">🔁 Play Q→A</button>
-                                <button onclick="stopSpeech()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
+                                <button data-play-answer="${escapeJs(card.back || '')}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Answer</button>
+                                <button data-play-qa data-play-qa-q="${escapeJs(card.front || '')}" data-play-qa-a="${escapeJs(card.back || '')}" class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded text-sm mr-2">🔁 Play Q→A</button>
+                                <button data-stop-audio class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
                             </div>
                             <div class="mb-3 text-sm text-gray-600">
                                 <label style="display:block;margin-bottom:6px;">Voice: <select id="voiceSelectBack" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:180px;"></select></label>
@@ -2676,7 +2697,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             </div>
                             <div class="flex justify-center space-x-6 mt-4">
                                 <div class="flex flex-col items-center">
-                                    <button onclick="rateCard('easy')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm">😊 Easy <span class="ml-2 text-xs">${getProjectedLabel(card,'easy')}</span></button>
+                                    <button onclick="rateCard('hard')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">😰 Hard <span class="ml-2 text-xs">${getProjectedLabel(card,'hard')}</span></button>
                                     <div class="text-xs text-gray-500 mt-1">(1)</div>
                                 </div>
                                 <div class="flex flex-col items-center">
@@ -2684,7 +2705,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                     <div class="text-xs text-gray-500 mt-1">(2)</div>
                                 </div>
                                 <div class="flex flex-col items-center">
-                                    <button onclick="rateCard('hard')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">😰 Hard <span class="ml-2 text-xs">${getProjectedLabel(card,'hard')}</span></button>
+                                    <button onclick="rateCard('easy')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm">😊 Easy <span class="ml-2 text-xs">${getProjectedLabel(card,'easy')}</span></button>
                                     <div class="text-xs text-gray-500 mt-1">(3)</div>
                                 </div>
                             </div>
@@ -2735,6 +2756,26 @@ Make sure each flashcard tests something specific from the transcript content.`;
             setTimeout(() => {
                 try { populateVoiceList(); } catch (e) { /* ignore */ }
             }, 40);
+            // Bind play controls for this rendered card
+            setTimeout(() => { try { populateCardAudioControls(); } catch(e){} }, 80);
+        }
+
+        // Attach event listeners to play/stop buttons on the current card
+        function populateCardAudioControls() {
+            // Play Question
+            document.querySelectorAll('[data-play-question]').forEach(btn => {
+                btn.onclick = function() { const txt = this.getAttribute('data-play-question'); playCardText(txt); };
+            });
+            // Play Answer
+            document.querySelectorAll('[data-play-answer]').forEach(btn => {
+                btn.onclick = function() { const txt = this.getAttribute('data-play-answer'); playCardText(txt); };
+            });
+            // Play Q->A
+            document.querySelectorAll('[data-play-qa]').forEach(btn => {
+                btn.onclick = function() { const q = this.getAttribute('data-play-qa-q'); const a = this.getAttribute('data-play-qa-a'); playCardSequential(q, a); };
+            });
+            // Stop buttons
+            document.querySelectorAll('[data-stop-audio]').forEach(btn => { btn.onclick = stopSpeech; });
         }
 
         // Populate available SpeechSynthesis voices into the voiceSelect control
@@ -2768,6 +2809,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const globalTone = document.getElementById('globalAiToneSelect');
             const savedTone = localStorage.getItem('aiFeedbackTone') || 'warm';
             try { if (globalTone) globalTone.value = savedTone; } catch(e) {}
+            // restore saved humor preference only if it exists (keep default placeholder otherwise)
+            const globalHumor = document.getElementById('globalHumorSelect');
+            const savedHumor = localStorage.getItem('flashcardHumor');
+            try { if (globalHumor && savedHumor !== null && savedHumor !== undefined) globalHumor.value = savedHumor; } catch(e) {}
 
             // wire change handlers to persist settings
             if (sel) sel.onchange = function() { localStorage.setItem('ttsVoice', sel.value || ''); };
@@ -2807,6 +2852,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     try { localStorage.setItem('aiFeedbackTone', globalTone.value || 'warm'); } catch(e) {}
                 };
             }
+            if (globalHumor) {
+                globalHumor.onchange = function() { try { const v = globalHumor.value || 'off'; localStorage.setItem('flashcardHumor', v); } catch(e) {} };
+            }
         }
 
         // Ensure voices are loaded, using voiceschanged event or polling as a fallback
@@ -2845,22 +2893,183 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
             // Split transcript into sentences and look for best overlap
             const sentences = transcript.split(/(?<=[.!?])\s+/g).filter(Boolean);
-            const tokenize = s => String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(Boolean);
+            const tokenize = s => String(s||'').toLowerCase().replace(/[^a-z0-9\%\$\s]/g,' ').split(/\s+/).filter(Boolean);
             const respTokens = new Set(tokenize(response).filter(t=>t.length>2));
-            let best = {score:0, text:''};
-            for (const s of sentences) {
+            let best = {score:0, text:'', index:0};
+            for (let idx = 0; idx < sentences.length; idx++) {
+                const s = sentences[idx];
                 const st = tokenize(s).filter(t=>t.length>2);
                 let score = 0; for (const t of st) if (respTokens.has(t)) score++;
-                if (score > best.score) best = {score, text: s};
+                // also reward short distance to start (earlier sentences slightly favored)
+                score += Math.max(0, 1 - idx / Math.max(10, sentences.length)) * 0.1;
+                if (score > best.score) best = {score, text: s, index: idx};
             }
 
-            if (best.score === 0) {
-                // Fallback: show a short excerpt near first contentful sentence
-                const excerpt = sentences.slice(0,2).join(' ');
+            if (!best.text || best.score === 0) {
+                // Fallback: show a short excerpt near the first substantive sentence
+                const excerpt = sentences.find(s => s && s.trim().length > 40) || sentences.slice(0,2).join(' ');
                 feedbackDiv.innerHTML += `<div class="mt-2 text-sm text-gray-700"><strong>Transcript hint:</strong> ${escapeHtml(excerpt)}</div>`;
-            } else {
-                feedbackDiv.innerHTML += `<div class="mt-2 text-sm text-gray-700"><strong>Transcript hint:</strong> ${escapeHtml(best.text)}</div>`;
+                return;
             }
+
+            // Initialize reveal level tracking (0=snippet,1=sentence,2=paragraph/full)
+            if (!videoData._revealLevel) videoData._revealLevel = [0,0,0,0];
+            videoData._revealLevel[questionIndex] = Math.min(2, (videoData._revealLevel[questionIndex] || 0));
+
+            // Try to extract a concise answer-like fragment: numbers, percentages, years, or short noun phrases
+            function extractAnswerFragment(s) {
+                // 1) numbers or percentages
+                const numMatch = s.match(/(\b\d{1,3}(?:[,\d]{0,3})?(?:\.\d+)?\s?(?:%|percent|kg|m|minutes|mins|years|year|ms|s)\b)/i);
+                if (numMatch) return numMatch[0];
+
+                // 2) years or ranges
+                const yearMatch = s.match(/(\b(19|20)\d{2}\b)/);
+                if (yearMatch) return yearMatch[0];
+
+                // 3) quoted phrases or parenthetical short answers
+                const quoteMatch = s.match(/"([^"]{3,60})"/);
+                if (quoteMatch) return quoteMatch[1];
+                const parenMatch = s.match(/\(([^\)]{3,80})\)/);
+                if (parenMatch) return parenMatch[1];
+
+                // 4) pick first 10-18 words as a concise answer (try to end at comma or semicolon)
+                const words = s.split(/\s+/).filter(Boolean);
+                if (words.length <= 18) return s.trim();
+                const snippet = words.slice(0, 18).join(' ');
+                const commaIdx = snippet.lastIndexOf(',');
+                if (commaIdx > 10) return snippet.slice(0, commaIdx) + '...';
+                return snippet + '...';
+            }
+
+            // Progressive reveal: level 0 -> short fragment, level 1 -> full sentence, level 2 -> paragraph (neighboring sentences)
+            const level = videoData._revealLevel[questionIndex] || 0;
+            let out = '';
+            if (level === 0) {
+                out = extractAnswerFragment(best.text || '');
+            } else if (level === 1) {
+                out = best.text;
+            } else {
+                // paragraph: include previous and next sentence if available
+                const para = [];
+                if (best.index > 0) para.push(sentences[best.index - 1]);
+                para.push(best.text);
+                if (best.index + 1 < sentences.length) para.push(sentences[best.index + 1]);
+                out = para.join(' ');
+            }
+
+            feedbackDiv.innerHTML += `<div class="mt-2 text-sm text-gray-700"><strong>Transcript hint:</strong> ${escapeHtml(out)}</div>`;
+
+            // Increase reveal level for next click (but cap at 2)
+            videoData._revealLevel[questionIndex] = Math.min(2, (videoData._revealLevel[questionIndex] || 0) + 1);
+        }
+
+        // Open a modal to create a single flashcard manually
+        function openCreateCardModal(existing) {
+            // existing param reserved for future edits
+            let modal = document.getElementById('createCardModal');
+            if (modal) modal.remove();
+            modal = document.createElement('div');
+            modal.id = 'createCardModal';
+            modal.style.position = 'fixed'; modal.style.top = '0'; modal.style.left = '0'; modal.style.width = '100vw'; modal.style.height = '100vh';
+            modal.style.background = 'rgba(0,0,0,0.6)'; modal.style.zIndex = '10000'; modal.style.display = 'flex'; modal.style.justifyContent = 'center'; modal.style.alignItems = 'center';
+
+            // Build category options
+            let catOptions = '<option value="">Uncategorized</option>';
+            try {
+                if (db) {
+                    const tx = db.transaction(['categories'], 'readonly');
+                    const store = tx.objectStore('categories');
+                    store.getAll().onsuccess = function(evt) {
+                        const cats = evt.target.result || [];
+                        catOptions = '<option value="">Uncategorized</option>' + cats.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+                        // Inject modal content after categories loaded
+                        injectCreateModalContent(modal, catOptions);
+                    };
+                    store.getAll().onerror = function() { injectCreateModalContent(modal, catOptions); };
+                } else {
+                    injectCreateModalContent(modal, catOptions);
+                }
+            } catch (e) { injectCreateModalContent(modal, catOptions); }
+        }
+
+        function injectCreateModalContent(modal, catOptions) {
+            modal.innerHTML = `
+                <div style="background:white;max-width:720px;width:92vw;border-radius:12px;padding:20px;box-sizing:border-box;">
+                    <h3 style="margin-top:0;margin-bottom:8px;font-size:1.2rem;">Create Flashcard</h3>
+                    <div style="display:flex;flex-direction:column;gap:8px;">
+                        <label>Front (Question):<textarea id="createFront" style="width:100%;min-height:80px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea></label>
+                        <label>Back (Answer):<textarea id="createBack" style="width:100%;min-height:120px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea></label>
+                        <label>Category:<select id="createCategory" style="padding:6px;border-radius:6px;border:1px solid #ccc;">${catOptions}</select></label>
+                        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
+                            <button id="createCancel" style="background:#e2e8f0;padding:8px 12px;border-radius:6px;border:none;cursor:pointer;">Cancel</button>
+                            <button id="createSave" style="background:#10b981;color:white;padding:8px 12px;border-radius:6px;border:none;cursor:pointer;">Save Card</button>
+                        </div>
+                    </div>
+                    <button onclick="document.getElementById('createCardModal') && document.getElementById('createCardModal').remove()" style="position:absolute;top:24px;right:40px;font-size:1.5rem;background:#eee;border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;">&times;</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            document.getElementById('createCancel').onclick = function() { document.getElementById('createCardModal') && document.getElementById('createCardModal').remove(); };
+            document.getElementById('createSave').onclick = saveCreatedCard;
+        }
+
+        // Save created card into IndexedDB with sensible defaults and optional category preset
+        function saveCreatedCard() {
+            const front = document.getElementById('createFront').value.trim();
+            const back = document.getElementById('createBack').value.trim();
+            const cat = document.getElementById('createCategory').value;
+            if (!front || !back) return alert('Please provide both front and back text for the card');
+
+            if (!db) {
+                alert('Database not ready. Try again in a moment.');
+                return;
+            }
+
+            const tx = db.transaction(['categories'], 'readonly');
+            const store = tx.objectStore('categories');
+            const getReq = store.get(Number(cat));
+            getReq.onsuccess = function(evt) {
+                const category = evt.target.result || {};
+                const preset = category && category.pacingPreset ? getPresetById(category.pacingPreset) : null;
+
+                const tx2 = db.transaction(['flashcards'], 'readwrite');
+                const store2 = tx2.objectStore('flashcards');
+                const data = {
+                    front,
+                    back,
+                    videoTitle: 'Manual Card',
+                    videoUrl: '',
+                    subject: '',
+                    categoryId: cat === '' ? '' : cat,
+                    createdAt: new Date().toISOString(),
+                    nextReview: new Date().toISOString(),
+                    interval: (preset && preset.initialInterval) ? Number(preset.initialInterval) : 1,
+                    easeFactor: (preset && preset.easeFactor) ? Number(preset.easeFactor) : 2.5,
+                    repetitions: 0,
+                    timesStudied: 0,
+                    lastDifficulty: null
+                };
+
+                const addReq = store2.add(data);
+                addReq.onsuccess = function() {
+                    document.getElementById('createCardModal') && document.getElementById('createCardModal').remove();
+                    // Refresh UI
+                    try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}
+                    alert('Card created');
+                };
+                addReq.onerror = function(e) { alert('Error saving card: ' + e.target.error); };
+            };
+            getReq.onerror = function() {
+                // Save with defaults if category fetch fails
+                const tx2 = db.transaction(['flashcards'], 'readwrite');
+                const store2 = tx2.objectStore('flashcards');
+                const data = {
+                    front, back, videoTitle: 'Manual Card', videoUrl: '', subject: '', categoryId: cat === '' ? '' : cat,
+                    createdAt: new Date().toISOString(), nextReview: new Date().toISOString(), interval: 1, easeFactor: 2.5, repetitions: 0, timesStudied: 0
+                };
+                store2.add(data).onsuccess = function() { document.getElementById('createCardModal') && document.getElementById('createCardModal').remove(); try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}; alert('Card created'); };
+            };
         }
 
         function flipCard() {
