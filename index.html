@@ -150,6 +150,14 @@
                         <button onclick="document.getElementById('csvFileInput').click()" class="text-sm text-blue-600 hover:underline ml-2">Import CSV</button>
                         <input id="csvFileInput" type="file" accept=".csv,text/csv" style="display:none" onchange="handleCSVFile(event)" />
                     </div>
+                        <div class="mt-3 text-sm text-gray-700">
+                            <label class="mr-3">AI Tone: <select id="globalAiToneSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:160px;">
+                                <option value="warm">Warm (default)</option>
+                                <option value="concise">Concise</option>
+                                <option value="direct">Direct</option>
+                            </select></label>
+                            <span class="text-xs text-gray-500">Choose the Coach tone used for Active Recall feedback.</span>
+                        </div>
                 
                     <!-- Category quick-review panel -->
                     <div id="categoryReviewPanel" class="mt-4 p-3 bg-white rounded-lg border">
@@ -2303,49 +2311,44 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 return generateFallbackFeedback(questionIndex, response, videoData);
             }
 
-            // Read saved tone (default to warm coach-like)
+            // Simple overlap check to avoid unwarranted praise.
+            const transcript = (videoData && videoData.transcript) ? String(videoData.transcript) : '';
+            function tokenize(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(Boolean); }
+            const stop = new Set(['the','and','that','this','for','with','you','was','are','is','a','an','in','on','of','to','it','by','as','be']);
+            const respTokens = tokenize(response).filter(t => t.length>2 && !stop.has(t));
+            const transTokens = tokenize(transcript).filter(t => t.length>2 && !stop.has(t));
+            const transSet = new Set(transTokens);
+            let overlap = 0; for (const t of respTokens) if (transSet.has(t)) overlap++;
+
             const savedTone = localStorage.getItem('aiFeedbackTone') || 'warm';
             let toneInstruction = 'Use a warm, coach-like voice: kind, encouraging, patient, and gently optimistic.';
-            if (savedTone === 'concise') {
-                toneInstruction = 'Be concise and neutral: brief praise, clear correction, then one short practice instruction.';
-            } else if (savedTone === 'direct') {
-                toneInstruction = 'Be direct and focused: highlight the key missing fact quickly, then give one practice step.';
-            }
+            if (savedTone === 'concise') toneInstruction = 'Be concise and neutral: brief praise if supported by the answer, then a clear correction and one short practice instruction.';
+            else if (savedTone === 'direct') toneInstruction = 'Be direct and focused: if the answer misses facts, state that plainly and give one practice step.';
 
-            // Guidance for active-recall hints: two graduated hints + one leading question, do NOT reveal the full answer.
-            const hintGuidance = `After a short praise and a single correction, give two hints that prompt recall (first broad, second more specific) without stating the missing detail. Then ask one short leading question to nudge retrieval. Finish with a single micro-practice instruction (e.g., 'Try to recall this in 60s without looking'). Keep overall reply concise.`;
+            // If there's no meaningful overlap, instruct model to be explicitly honest and avoid praise.
+            const honestyInstruction = (overlap < 1) ? 'Start with an honest note: the student answer does not match the transcript. Do NOT offer praise. Focus on evidence from the transcript and provide hints.' : 'If appropriate, begin with a brief praise sentence supported by the student answer.';
 
-            // Build prompt with context. Keep it short and focused; the model should not output long explanations.
-            const transcriptSnippet = (videoData && videoData.transcript) ? `Transcript excerpt: ${videoData.transcript}` : 'Transcript: (use available transcript to check details)';
+            const hintGuidance = `After the opening honesty/praise and a concise correction, give two graduated hints (broad -> specific) that do NOT reveal the missing detail, then one short leading question to nudge retrieval, and finish with a micro-practice instruction (<60s). Keep overall reply concise.`;
 
-            const prompt = `${toneInstruction} ${hintGuidance}\n\nStudent answer: "${response}"\n\n${transcriptSnippet}\n\nCompare the student's answer to the transcript. Produce, in plain short sentences addressed to the student (speak as "you"): 1) one brief praise sentence about what you remembered correctly; 2) one short correction or important missing point (keep it minimal); 3) two hints to help you retrieve the detail without giving it away (broad -> specific); 4) one short leading question to prompt recall; 5) one micro-practice instruction the student can do in under 1 minute. Keep output under ~200 words and do NOT print numbered lists in the final answer.`;
+            const transcriptSnippet = transcript ? `Transcript excerpt: ${transcript}` : 'Transcript: (use available transcript to check details)';
+
+            const prompt = `${toneInstruction} ${honestyInstruction} ${hintGuidance}\n\nStudent answer: "${response}"\n\n${transcriptSnippet}\n\nCompare the student's answer to the transcript and respond directly to the student (speak as "you"). If there is no evidence in the transcript to support praise, start with an honest clear note indicating the mismatch. Then give a short correction or missing point (if any), two hints to prompt recall without revealing the answer, one leading question, and one micro-practice instruction. Keep output under ~200 words and avoid long explanations.`;
 
             try {
                 const response_ai = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        contents: [{
-                            parts: [{ text: prompt }]
-                        }],
-                        generationConfig: {
-                            temperature: 0.6,
-                            topK: 40,
-                            topP: 0.9,
-                            maxOutputTokens: 300
-                        }
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { temperature: 0.6, topK: 40, topP: 0.9, maxOutputTokens: 300 }
                     })
                 });
 
                 if (response_ai.ok) {
                     const data = await response_ai.json();
                     let feedback = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                    // Safety: trim to ~600 chars if model returned longer text
                     if (feedback.length > 600) feedback = feedback.slice(0, 597) + '...';
                     if (feedback) {
-                        // Wrap in a compact, personal tile with hint-focused styling
                         return `
                             <div class="bg-gradient-to-r from-purple-50 to-blue-50 border-l-4 border-purple-400 p-3 rounded">
                                 <div class="flex items-start">
@@ -2368,14 +2371,42 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
         // Fallback feedback when AI is not available
         function generateFallbackFeedback(questionIndex, response, videoData) {
-            // Warm, hint-focused fallback from Coach
-            const praise = 'Good job — you picked up some important points.';
-            const correction = 'One small gap: try to recall a concrete example mentioned in the video.';
-            const hint1 = 'Hint 1: Think about the example used when the speaker discussed real-world applications.';
-            const hint2 = 'Hint 2: It included a specific number or year that anchors the example.';
-            const leading = 'Question: What was the real-world example used?';
-            const micro = 'Micro-practice: spend 45–60 seconds trying to recall just that example before checking.';
+            const transcript = (videoData && videoData.transcript) ? String(videoData.transcript) : '';
+            function tokenize(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(Boolean); }
+            const stop = new Set(['the','and','that','this','for','with','you','was','are','is','a','an','in','on','of','to','it','by','as','be']);
+            const respTokens = tokenize(response).filter(t => t.length>2 && !stop.has(t));
+            const transTokens = tokenize(transcript).filter(t => t.length>2 && !stop.has(t));
+            const transSet = new Set(transTokens);
+            let overlap = 0; for (const t of respTokens) if (transSet.has(t)) overlap++;
 
+            // If no overlap, be honest and avoid praise
+            if (overlap < 1) {
+                const honest = 'I don\'t see evidence in your answer that matches the transcript.';
+                const hint1 = 'Hint: Think about who or what was used as the primary example in the middle of the video.';
+                const hint2 = 'Narrower hint: it included a specific percentage or numerical example tied to the result.';
+                const leading = 'Question: What specific example or number did the speaker use?';
+                const micro = 'Micro-practice: spend 45–60 seconds trying to recall that single example before checking.';
+                const combined = `${honest} ${hint1} ${hint2} ${leading} ${micro}`;
+                return `
+                    <div class="bg-gradient-to-r from-green-50 to-blue-50 border-l-4 border-green-400 p-3 rounded">
+                        <div class="flex items-start">
+                            <div class="text-2xl mr-3">🌟</div>
+                            <div>
+                                <div class="font-semibold text-green-800 mb-1">Coach:</div>
+                                <div class="text-green-700 text-sm">${escapeHtml(combined)}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Otherwise give a warm, hint-focused fallback
+            const praise = 'Good work — you remembered some important points.';
+            const correction = 'One small gap: try to recall a specific concrete example mentioned in the video.';
+            const hint1 = 'Hint 1: Think about the example used when the speaker discussed real-world outcomes.';
+            const hint2 = 'Hint 2: It included a specific number or year that anchors the example.';
+            const leading = 'Question: Which example or number was used?';
+            const micro = 'Micro-practice: try to recall that detail for 45–60 seconds.';
             const combined = `${praise} ${correction} ${hint1} ${hint2} ${leading} ${micro}`;
             return `
                 <div class="bg-gradient-to-r from-green-50 to-blue-50 border-l-4 border-green-400 p-3 rounded">
@@ -2545,14 +2576,13 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                 <button onclick="stopSpeech()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
                             </div>
                             <div class="mb-3 text-sm text-gray-600">
-                                <label style="margin-right:8px;">Voice: <select id="voiceSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:180px;"></select></label>
-                                <label style="margin-left:8px;">Rate: <span id="voiceRateLabel" style="font-weight:600;">1</span> <input id="voiceRate" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:120px;margin-left:6px;"/></label>
-                                <label style="margin-left:8px;">Pitch: <span id="voicePitchLabel" style="font-weight:600;">1</span> <input id="voicePitch" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:120px;margin-left:6px;"/></label>
-                                <label style="margin-left:8px;">AI Tone: <select id="aiToneSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:160px;">
-                                    <option value="warm">Warm (default)</option>
-                                    <option value="concise">Concise</option>
-                                    <option value="direct">Direct</option>
-                                </select></label>
+                                <label style="display:block;margin-bottom:6px;">Voice: <select id="voiceSelect" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:180px;"></select></label>
+                                <div style="display:flex;gap:12px;align-items:center;">
+                                    <label>Rate: <span id="voiceRateLabel" style="font-weight:600;">1</span></label>
+                                    <input id="voiceRate" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:220px;"/>
+                                    <label>Pitch: <span id="voicePitchLabel" style="font-weight:600;">1</span></label>
+                                    <input id="voicePitch" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:220px;"/>
+                                </div>
                             </div>
                             <div>
                                 <button onclick="flipCard()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">Show Answer</button>
@@ -2566,14 +2596,13 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                 <button onclick="stopSpeech()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
                             </div>
                             <div class="mb-3 text-sm text-gray-600">
-                                <label style="margin-right:8px;">Voice: <select id="voiceSelectBack" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:180px;"></select></label>
-                                <label style="margin-left:8px;">Rate: <span id="voiceRateLabelBack" style="font-weight:600;">1</span> <input id="voiceRateBack" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:120px;margin-left:6px;"/></label>
-                                <label style="margin-left:8px;">Pitch: <span id="voicePitchLabelBack" style="font-weight:600;">1</span> <input id="voicePitchBack" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:120px;margin-left:6px;"/></label>
-                                <label style="margin-left:8px;">AI Tone: <select id="aiToneSelectBack" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:160px;">
-                                    <option value="warm">Warm (default)</option>
-                                    <option value="concise">Concise</option>
-                                    <option value="direct">Direct</option>
-                                </select></label>
+                                <label style="display:block;margin-bottom:6px;">Voice: <select id="voiceSelectBack" style="padding:4px;border-radius:6px;border:1px solid #ccc;min-width:180px;"></select></label>
+                                <div style="display:flex;gap:12px;align-items:center;">
+                                    <label>Rate: <span id="voiceRateLabelBack" style="font-weight:600;">1</span></label>
+                                    <input id="voiceRateBack" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:220px;"/>
+                                    <label>Pitch: <span id="voicePitchLabelBack" style="font-weight:600;">1</span></label>
+                                    <input id="voicePitchBack" type="range" min="0.5" max="2" step="0.1" value="1" style="vertical-align:middle;width:220px;"/>
+                                </div>
                             </div>
                             <div class="flex justify-center space-x-3 mt-4">
                                 <button onclick="rateCard('hard')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">😰 Hard <span class="ml-2 text-xs">${getProjectedLabel(card,'hard')}</span></button>
@@ -2656,11 +2685,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const saved = localStorage.getItem('ttsVoice');
             if (saved) try { if (sel) sel.value = saved; if (selBack) selBack.value = saved; } catch(e) {}
 
-            // restore saved AI tone if any
-            const aiToneSel = document.getElementById('aiToneSelect');
-            const aiToneSelBack = document.getElementById('aiToneSelectBack');
+            // restore saved AI tone from global selector if present
+            const globalTone = document.getElementById('globalAiToneSelect');
             const savedTone = localStorage.getItem('aiFeedbackTone') || 'warm';
-            try { if (aiToneSel) aiToneSel.value = savedTone; if (aiToneSelBack) aiToneSelBack.value = savedTone; } catch(e) {}
+            try { if (globalTone) globalTone.value = savedTone; } catch(e) {}
 
             // wire change handlers to persist settings
             if (sel) sel.onchange = function() { localStorage.setItem('ttsVoice', sel.value || ''); };
@@ -2694,15 +2722,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 pitchElBack.oninput = function() { localStorage.setItem('ttsPitch', pitchElBack.value); document.getElementById('voicePitchLabelBack') && (document.getElementById('voicePitchLabelBack').textContent = pitchElBack.value); if (pitchEl) pitchEl.value = pitchElBack.value; };
                 document.getElementById('voicePitchLabelBack') && (document.getElementById('voicePitchLabelBack').textContent = pitchElBack.value);
             }
-            // wire AI tone selects
-            if (aiToneSel) {
-                aiToneSel.onchange = function() {
-                    try { localStorage.setItem('aiFeedbackTone', aiToneSel.value || 'warm'); if (aiToneSelBack) aiToneSelBack.value = aiToneSel.value; } catch(e) {}
-                };
-            }
-            if (aiToneSelBack) {
-                aiToneSelBack.onchange = function() {
-                    try { localStorage.setItem('aiFeedbackTone', aiToneSelBack.value || 'warm'); if (aiToneSel) aiToneSel.value = aiToneSelBack.value; } catch(e) {}
+            // wire global AI tone selector
+            if (globalTone) {
+                globalTone.onchange = function() {
+                    try { localStorage.setItem('aiFeedbackTone', globalTone.value || 'warm'); } catch(e) {}
                 };
             }
         }
