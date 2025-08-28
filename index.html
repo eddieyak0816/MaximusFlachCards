@@ -2959,6 +2959,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
             // prime TTS on first real user action (helps some browsers populate voices)
             try { primeTTSOnFirstGesture(); } catch (e) {}
             window._activeConversation = conversation;
+            // reset any manual stop suppression because the user is explicitly starting the mic
+            try { if (conversation && typeof conversation === 'object') { conversation._suppressAutoRestart = false; conversation._lastUtterance = null; } } catch (e) {}
             conversation._lastSentText = r._lastSentText || '';
             conversation.inputEl = conversation.inputEl || (conversation.convEl ? conversation.convEl.querySelector('.conv-input') : null);
             conversation.micBtn = conversation.micBtn || (conversation.convEl ? conversation.convEl.querySelector('.conv-mic-btn') : null);
@@ -2988,6 +2990,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         <div style="display:flex;gap:8px;align-items:center;">
                             <input class="conv-input" placeholder="Speak or type..." style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;" />
                             <button class="conv-mic-btn" style="padding:8px 10px;border-radius:6px;background:#f3f4f6;border:none;cursor:pointer;">🎤</button>
+                            <button class="conv-stop-btn" style="padding:8px 10px;border-radius:6px;background:#ef4444;color:white;border:none;cursor:pointer;margin-left:4px;">■ Stop</button>
                             <button class="conv-send-btn" style="padding:8px 12px;border-radius:6px;background:#2563eb;color:white;border:none;cursor:pointer;">Send</button>
                         </div>
                     `;
@@ -3000,6 +3003,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     existing._contextText = `Question: ${qText}\n\nStudent draft answer: ${recallResponse}\n\nTranscript:\n${(videoData && videoData.transcript) ? videoData.transcript : ''}`;
                     const micBtn = existing.querySelector('.conv-mic-btn');
                     const sendBtn = existing.querySelector('.conv-send-btn');
+                    const stopBtn = existing.querySelector('.conv-stop-btn');
                     const inputEl = existing.querySelector('.conv-input');
                     const messagesEl = existing.querySelector('.conv-messages');
                     // wire send
@@ -3011,6 +3015,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     micBtn.onclick = () => {
                         startSharedRecognitionForConversation({ _chatHistory: existing._chatHistory, _contextText: existing._contextText, convEl: messagesEl, inputEl, micBtn });
                     };
+                    // stop button cancels speaking and prevents automatic restart
+                    try {
+                        if (stopBtn) stopBtn.onclick = () => { try { stopAiSpeechForConversation(existing); } catch (e) { console.error(e); } };
+                    } catch (e) {}
                 }
                 // start listening immediately
                 const micBtnStart = existing.querySelector('.conv-mic-btn');
@@ -3420,6 +3428,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
                         <input id="aiChatInput" placeholder="Ask the AI a question..." style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;" />
                         <button id="aiMic" style="padding:8px 10px;border-radius:6px;background:#f3f4f6;border:none;cursor:pointer;">🎤</button>
+                        <button id="aiStop" title="Stop AI speech" style="padding:8px 10px;border-radius:6px;background:#ef4444;color:white;border:none;cursor:pointer;margin-left:4px;">■ Stop</button>
                         <button id="aiSend" style="padding:8px 12px;border-radius:6px;background:#2563eb;color:white;border:none;cursor:pointer;">Send</button>
                     </div>
                     <div style="text-align:right;"><small class="text-gray-500">Tip: You can ask the AI to explain, quiz, or give a related example.</small></div>
@@ -3445,6 +3454,11 @@ Make sure each flashcard tests something specific from the transcript content.`;
             modal.convEl = document.getElementById('aiChatConversation');
             modal.inputEl = document.getElementById('aiChatInput');
             modal.micBtn = micBtn;
+            modal._lastUtterance = null;
+            modal._suppressAutoRestart = false;
+            // Stop button: cancel speech and suppress restart
+            const aiStopBtn = document.getElementById('aiStop');
+            if (aiStopBtn) aiStopBtn.onclick = function() { try { stopAiSpeechForConversation(modal); } catch (e) { console.error(e); } };
             micBtn.onclick = function() {
                 // start shared recognition for the modal conversation
                 try { startSharedRecognitionForConversation(modal); } catch (e) { console.error('Failed to start recognition for modal', e); alert('Failed to start microphone'); }
@@ -3662,15 +3676,36 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 const pitchVal = (document.getElementById('settingsVoicePitch') && document.getElementById('settingsVoicePitch').value) ? Number(document.getElementById('settingsVoicePitch').value) : Number(localStorage.getItem('ttsPitch') || 1);
                 const opts = voiceName ? { voiceName, rate: rateVal, pitch: pitchVal } : null;
                 const utter = speakTextWithOptions(aiText, opts);
+                // remember last utterance so it can be cancelled by Stop
+                try { if (modal && typeof modal === 'object') modal._lastUtterance = utter; } catch (e) {}
                 // If modal is an inline conv object, after speaking, start shared recognition again to continue the conversation
                 if (utter && modal && modal.convEl) {
+                    const restartIfAllowed = () => { try { if (!modal._suppressAutoRestart) startSharedRecognitionForConversation(modal); } catch (e){} };
                     if (utter.onend) {
-                        utter.onend = () => { try { startSharedRecognitionForConversation(modal); } catch (e){} };
+                        utter.onend = restartIfAllowed;
                     } else {
-                        setTimeout(() => { try { startSharedRecognitionForConversation(modal); } catch(e){} }, 350);
+                        setTimeout(restartIfAllowed, 350);
                     }
                 }
             } catch (e) { /* ignore */ }
+        }
+
+        // Stop AI speech for a given conversation object (modal or inline conv element wrapper)
+        function stopAiSpeechForConversation(conversation) {
+            try {
+                // cancel any ongoing TTS
+                stopSpeech();
+            } catch (e) { console.error(e); }
+            try {
+                // mark this conversation to suppress automatic restart of recognition
+                if (conversation && typeof conversation === 'object') conversation._suppressAutoRestart = true;
+                // if there is a stored utterance, try to cancel its onend to avoid callbacks
+                try { if (conversation && conversation._lastUtterance) { conversation._lastUtterance.onend = null; conversation._lastUtterance = null; } } catch(e){}
+                // Also stop shared recognition globally
+                try { stopSharedRecognition(); } catch (e) {}
+                // hide listening indicator
+                try { hideListeningIndicator(); } catch (e) {}
+            } catch (e) { console.error('stopAiSpeechForConversation failed', e); }
         }
 
         function flipCard() {
