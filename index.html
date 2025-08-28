@@ -4086,6 +4086,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                 <option value=''>Set category...</option>
                             </select>
                             <button onclick="bulkChangeCategory()" style='background:#3182ce;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;margin-left:8px;'>Apply</button>
+                            <label style='margin-left:8px;font-size:0.9rem;color:#4a5568;'>Bulk due:</label>
+                            <input type='date' id='bulkDueInput' style='padding:6px;border-radius:6px;border:1px solid #ccc;' />
+                            <button onclick='bulkApplyDueDate()' style='background:#805ad5;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;margin-left:6px;'>Apply date to selected</button>
                         </div>
                         <div style='display:flex;gap:12px;align-items:center;'>
                             <label style='font-size:0.9rem;color:#4a5568;'>Filter:</label>
@@ -4331,8 +4334,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const parts = current.split('/');
                     if (parts.length === 3) {
                         const mm = parts[0], dd = parts[1], yy = parts[2];
-                        const fullYear = (yy.length === 2) ? (2000 + Number(yy)) : Number(yy);
-                        iso = new Date(fullYear, Number(mm)-1, Number(dd)).toISOString().slice(0,10);
+                            const fullYear = (yy.length === 2) ? (2000 + Number(yy)) : Number(yy);
+                            const tmp = new Date(fullYear, Number(mm)-1, Number(dd), 12, 0, 0, 0);
+                            iso = tmp.toISOString().slice(0,10);
                     }
                 }
                 const input = document.createElement('input');
@@ -4547,8 +4551,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const parts = current.split('/');
                     if (parts.length === 3) {
                         const mm = parts[0], dd = parts[1], yy = parts[2];
-                        const fullYear = (yy.length === 2) ? (2000 + Number(yy)) : Number(yy);
-                        iso = new Date(fullYear, Number(mm)-1, Number(dd)).toISOString().slice(0,10);
+                            const fullYear = (yy.length === 2) ? (2000 + Number(yy)) : Number(yy);
+                            const tmp = new Date(fullYear, Number(mm)-1, Number(dd), 12, 0, 0, 0);
+                            iso = tmp.toISOString().slice(0,10);
                     }
                 }
                 const input = document.createElement('input');
@@ -4593,7 +4598,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 if (!input) return;
                 const val = input.value; // ISO YYYY-MM-DD
                 if (!val) return alert('Please choose a date');
-                const next = new Date(val);
+                // Create a Date at local noon to avoid timezone shifting the date when stored as ISO
+                const parts = val.split('-'); // YYYY-MM-DD
+                const y = parseInt(parts[0], 10), m = parseInt(parts[1], 10) - 1, d = parseInt(parts[2], 10);
+                const next = new Date(y, m, d, 12, 0, 0, 0);
                 if (isNaN(next)) return alert('Invalid date');
                 if (!db) return alert('DB not ready');
                 const tx = db.transaction(['flashcards'], 'readwrite');
@@ -4677,7 +4685,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             if (!sel) return;
             const newCat = sel.value;
             const coercedCat = (newCat === '' || newCat === null) ? '' : (isNaN(parseInt(newCat)) ? newCat : parseInt(newCat));
-
+            if (!db) return alert('DB not ready');
             const tx = db.transaction(['flashcards'], 'readwrite');
             const store = tx.objectStore('flashcards');
             ids.forEach(id => {
@@ -4686,6 +4694,32 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const card = evt.target.result;
                     if (!card) return;
                     card.categoryId = coercedCat;
+                    store.put(card);
+                };
+            });
+            tx.oncomplete = function() { showAllCards(); };
+        }
+
+        function bulkApplyDueDate() {
+            const ids = getSelectedCardIds();
+            if (!ids || ids.length === 0) return alert('No cards selected');
+            const input = document.getElementById('bulkDueInput');
+            if (!input) return alert('Bulk due input not found');
+            const val = input.value;
+            if (!val) return alert('Choose a date to apply');
+            // Create local-noon date
+            const parts = val.split('-');
+            const y = parseInt(parts[0], 10), m = parseInt(parts[1], 10) - 1, d = parseInt(parts[2], 10);
+            const next = new Date(y, m, d, 12, 0, 0, 0);
+            if (isNaN(next)) return alert('Invalid date');
+            if (!db) return alert('DB not ready');
+            const tx = db.transaction(['flashcards'], 'readwrite');
+            const store = tx.objectStore('flashcards');
+            ids.forEach(id => {
+                const getReq = store.get(id);
+                getReq.onsuccess = function(evt) {
+                    const card = evt.target.result || { id };
+                    card.nextReview = next.toISOString();
                     store.put(card);
                 };
             });
