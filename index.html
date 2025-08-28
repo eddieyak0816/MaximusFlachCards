@@ -2956,6 +2956,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
         function startSharedRecognitionForConversation(conversation) {
             const r = initSharedSpeechRecognition();
             if (!r) { alert('Speech recognition not supported in this browser'); return; }
+            // prime TTS on first real user action (helps some browsers populate voices)
+            try { primeTTSOnFirstGesture(); } catch (e) {}
             window._activeConversation = conversation;
             conversation._lastSentText = r._lastSentText || '';
             conversation.inputEl = conversation.inputEl || (conversation.convEl ? conversation.convEl.querySelector('.conv-input') : null);
@@ -3146,6 +3148,37 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     if (Date.now() - start > timeoutMs) { clearInterval(iv); done(); }
                 }, 100);
             });
+        }
+
+        // Prime TTS on first user gesture to improve voice enumeration in some browsers.
+        // This speaks a very quiet short utterance after voices are available. It must be
+        // triggered by a user gesture to satisfy browser autoplay policies.
+        async function primeTTSOnFirstGesture() {
+            try {
+                if (window._ttsPrimed) return;
+                if (!('speechSynthesis' in window)) { window._ttsPrimed = true; return; }
+                // wait briefly for voices to appear
+                const voices = await ensureVoicesLoaded(2000);
+                // create a near-silent utterance to prime audio and voices
+                const sampleText = 'Initializing voice features.';
+                const u = new SpeechSynthesisUtterance(sampleText);
+                u.rate = 1; u.pitch = 1; u.lang = navigator.language || 'en-US';
+                try { u.volume = 0.02; } catch (e) { /* volume may be unsupported */ }
+                // pick a voice if we have a saved preference or any available voice
+                try {
+                    const saved = localStorage.getItem('ttsVoice') || '';
+                    const list = window.speechSynthesis.getVoices() || voices || [];
+                    let found = null;
+                    if (saved) found = list.find(v => v.name === saved || (v.name + ' (' + v.lang + ')') === saved);
+                    if (!found && list.length) found = list[0];
+                    if (found) u.voice = found;
+                } catch (e) { /* ignore */ }
+                // mark primed once utterance starts to avoid races
+                u.onstart = function() { window._ttsPrimed = true; };
+                u.onend = function() { try { /* no-op */ } catch (e) {} };
+                // speak quietly (user gesture required before this is called)
+                try { window.speechSynthesis.speak(u); } catch (e) { window._ttsPrimed = true; }
+            } catch (e) { try { window._ttsPrimed = true; } catch (e) {} }
         }
 
         // Reveal the best matching transcript sentence for a question (gated behind rules)
@@ -3454,6 +3487,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             <div style="flex:1"><label style="display:block;font-size:0.9rem;margin-bottom:6px;">Pitch</label><input id="settingsVoicePitch" type="range" min="0.5" max="2" step="0.1" value="1" style="width:100%;"/></div>
                         </div>
                     </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;margin-bottom:6px;">Detailed answers after how many student messages? <small style="color:#666;">(Default 5)</small></label>
+                        <input id="settingsVerboseAfter" type="number" min="1" max="50" value="5" style="width:100px;padding:6px;border:1px solid #ccc;border-radius:6px;" />
+                    </div>
                     <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
                         <button id="playSampleBtn" style="background:#10b981;color:#fff;padding:8px 12px;border-radius:6px;border:none;">Play sample</button>
                         <button id="saveSettingsBtn" style="background:#2563eb;color:#fff;padding:8px 12px;border-radius:6px;border:none;">Save</button>
@@ -3461,14 +3498,18 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 </div>
             `;
             document.body.appendChild(m);
+
+            // Prime TTS immediately because user gesture opened Settings
+            try { primeTTSOnFirstGesture(); } catch (e) {}
             document.getElementById('settingsClose').onclick = () => { m.remove(); };
-            document.getElementById('saveSettingsBtn').onclick = () => {
+        document.getElementById('saveSettingsBtn').onclick = () => {
                 try {
                     const tone = document.getElementById('settingsAiTone').value; localStorage.setItem('aiFeedbackTone', tone);
                     const humor = document.getElementById('settingsHumor').value; localStorage.setItem('flashcardHumor', humor);
                     const voice = document.getElementById('settingsVoiceSelect').value || ''; localStorage.setItem('ttsVoice', voice);
                     const rate = document.getElementById('settingsVoiceRate').value; localStorage.setItem('ttsRate', rate);
                     const pitch = document.getElementById('settingsVoicePitch').value; localStorage.setItem('ttsPitch', pitch);
+            const verboseAfter = document.getElementById('settingsVerboseAfter') ? Number(document.getElementById('settingsVerboseAfter').value) : 5; localStorage.setItem('aiVerboseAfter', String(verboseAfter));
                 } catch(e) { console.error(e); }
                 m.remove();
             };
@@ -3488,6 +3529,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             try {
                 const savedTone = localStorage.getItem('aiFeedbackTone') || 'warm'; if (document.getElementById('settingsAiTone')) document.getElementById('settingsAiTone').value = savedTone;
                 const savedHumor = localStorage.getItem('flashcardHumor'); if (document.getElementById('settingsHumor') && savedHumor) document.getElementById('settingsHumor').value = savedHumor;
+                const savedVerbose = localStorage.getItem('aiVerboseAfter') || '5'; if (document.getElementById('settingsVerboseAfter')) document.getElementById('settingsVerboseAfter').value = savedVerbose;
                 const savedVoice = localStorage.getItem('ttsVoice'); if (document.getElementById('settingsVoiceSelect') && savedVoice) { /* value will be set by populateVoiceList when voices load */ }
                 const savedRate = localStorage.getItem('ttsRate'); if (savedRate && document.getElementById('settingsVoiceRate')) document.getElementById('settingsVoiceRate').value = savedRate;
                 const savedPitch = localStorage.getItem('ttsPitch'); if (savedPitch && document.getElementById('settingsVoicePitch')) document.getElementById('settingsVoicePitch').value = savedPitch;
@@ -3519,6 +3561,41 @@ Make sure each flashcard tests something specific from the transcript content.`;
             // push user message
             history.push({ role: 'user', content: message });
 
+            // Track per-conversation user message count for escalation
+            try {
+                if (modal && typeof modal === 'object') {
+                    modal._userMessageCount = (modal._userMessageCount || 0) + 1;
+                } else if (window._activeConversation && typeof window._activeConversation === 'object') {
+                    window._activeConversation._userMessageCount = (window._activeConversation._userMessageCount || 0) + 1;
+                }
+            } catch(e) { /* ignore */ }
+
+            // Read escalation threshold (default 5)
+            const verboseAfter = parseInt(localStorage.getItem('aiVerboseAfter') || '5', 10) || 5;
+            // determine whether this conversation should now receive verbose/detailed answers
+            let verboseInstruction = '';
+            try {
+                const count = (modal && modal._userMessageCount) ? modal._userMessageCount : (window._activeConversation && window._activeConversation._userMessageCount ? window._activeConversation._userMessageCount : 0);
+                if (count >= verboseAfter) {
+                    verboseInstruction = '\n\nImportant: The student has asked several follow-up questions. Now provide a much more informative, detailed answer: include a concise summary, step-by-step explanation, examples, and one short practice prompt the student can try. Keep explanations practical and easy to follow.';
+                    // mark verbose mode so subsequent messages stay detailed
+                    try { if (modal && typeof modal === 'object') modal._verboseMode = true; if (window._activeConversation) window._activeConversation._verboseMode = true; } catch(e) {}
+
+                    // Inject a persistent system message into chat history so future LLM calls include the verbose directive
+                    try {
+                        const persistent = { role: 'system', content: 'VERBOSE_MODE: The student requested more detailed explanations after multiple follow-ups. For the remainder of this conversation, prioritize detailed answers: include a short summary, a step-by-step explanation, concrete examples, and a single short practice prompt. Keep language practical and actionable.' };
+                        if (modal && modal._chatHistory && Array.isArray(modal._chatHistory)) {
+                            // only add once
+                            const already = modal._chatHistory.find(m => m.role === 'system' && String(m.content || '').includes('VERBOSE_MODE'));
+                            if (!already) modal._chatHistory.unshift(persistent);
+                        } else if (window._activeConversation && window._activeConversation._chatHistory && Array.isArray(window._activeConversation._chatHistory)) {
+                            const already = window._activeConversation._chatHistory.find(m => m.role === 'system' && String(m.content || '').includes('VERBOSE_MODE'));
+                            if (!already) window._activeConversation._chatHistory.unshift(persistent);
+                        }
+                    } catch (e) { /* ignore */ }
+                }
+            } catch(e) { /* ignore */ }
+
             // If user message is very short, ask AI to clarify before answering fully
             const shortMsg = message.trim().length < 15;
 
@@ -3531,7 +3608,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     videoNote = `Student has just watched a video. URL provided: ${hasUrl ? 'yes' : 'no'}. Transcript provided: ${hasTranscriptFlag ? 'yes' : 'no'}.`;
                 }
             } catch(e) { videoNote = ''; }
-            const systemPrefix = `Context:\n${context}\n\n${videoNote}\n\nRespond as a friendly study coach. If the student message lacks detail, ask one concise clarifying question instead of providing a full answer.`;
+            const systemPrefix = `Context:\n${context}\n\n${videoNote}\n\nRespond as a friendly study coach. If the student message lacks detail, ask one concise clarifying question instead of providing a full answer.${verboseInstruction}`;
 
             try {
                 if (geminiKey) {
@@ -4685,6 +4762,16 @@ Make sure each flashcard tests something specific from the transcript content.`;
             try { loadCategories(); } catch (e) { /* ignore */ }
             try { refreshAllCategorySelects(); } catch (e) { /* ignore */ }
             try { refreshCategoryReviewPanel(); } catch (e) { /* ignore */ }
+            // set up a one-time user gesture to prime TTS (helps voice list populate in some browsers)
+            try {
+                const onFirstGesture = function() {
+                    try { primeTTSOnFirstGesture(); } catch (e) {}
+                    window.removeEventListener('click', onFirstGesture);
+                    window.removeEventListener('touchstart', onFirstGesture);
+                };
+                window.addEventListener('click', onFirstGesture);
+                window.addEventListener('touchstart', onFirstGesture);
+            } catch (e) {}
         });
 
         // Export all flashcards to CSV (promptDownload=true triggers a download)
