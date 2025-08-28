@@ -4807,6 +4807,44 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 window.addEventListener('click', onFirstGesture);
                 window.addEventListener('touchstart', onFirstGesture);
             } catch (e) {}
+            // Allow Enter to send in modal and inline chat inputs (Shift+Enter = newline)
+            try {
+                window.addEventListener('keydown', function(e) {
+                    if (e.key !== 'Enter') return;
+                    if (e.ctrlKey || e.metaKey || e.altKey) return;
+                    const active = document.activeElement;
+                    if (!active) return;
+                    // Modal chat input
+                    if (active.id === 'aiChatInput') {
+                        if (e.shiftKey) return; // allow newline
+                        e.preventDefault();
+                        const val = (active.value || '').trim();
+                        if (!val) return;
+                        appendAiMessage('You', val, document.getElementById('aiChatConversation'));
+                        active.value = '';
+                        const modalEl = document.getElementById('aiChatModal');
+                        const ctx = modalEl && modalEl._contextText ? modalEl._contextText : (window._activeConversation && window._activeConversation._contextText ? window._activeConversation._contextText : '');
+                        const modalObj = modalEl || (window._activeConversation || {});
+                        sendAiChatMessage(val, ctx, modalObj);
+                        return;
+                    }
+                    // Inline conv inputs
+                    if (active.classList && active.classList.contains('conv-input')) {
+                        if (e.shiftKey) return; // allow newline
+                        e.preventDefault();
+                        const container = active.closest('.inline-ai-conv');
+                        const messagesEl = container ? container.querySelector('.conv-messages') : null;
+                        const text = (active.value || '').trim();
+                        if (!text) return;
+                        appendAiMessage('You', text, messagesEl);
+                        active.value = '';
+                        const convObj = container || (window._activeConversation || {});
+                        const ctx = convObj && convObj._contextText ? convObj._contextText : (window._activeConversation && window._activeConversation._contextText ? window._activeConversation._contextText : '');
+                        sendAiChatMessage(text, ctx, { _chatHistory: convObj._chatHistory || [], _contextText: ctx, convEl: messagesEl });
+                        return;
+                    }
+                });
+            } catch (e) {}
         });
 
         // Export all flashcards to CSV (promptDownload=true triggers a download)
