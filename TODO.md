@@ -137,3 +137,21 @@ How we'll work incrementally
 
 ---
 Add new tasks above as needed. Mark tasks as completed by changing [ ] to [x].
+
+## Implemented features (current)
+
+The following features and engineering changes have been implemented in the SPA (`index.html`) during recent work. Keep this list for quick reference.
+
+- Central Settings modal for AI Tone, Humor, and global TTS voice/rate/pitch.
+- Play-sample TTS preview and voice-list priming & retries.
+- Shared speech recognition routed to modal and inline chats with listening indicator and auto-send of final transcripts.
+- Stop controls (cancel TTS & STT, suppress auto-restart).
+- Enter-to-send behaviour for AI chat inputs (Enter sends, Shift+Enter newline).
+- Configurable verbose escalation (`aiVerboseAfter`, default 5) with per-conversation counting and session-level VERBOSE_MODE injection.
+- inferVideoTopic(transcript) used to create "Video about <topic>" context for flashcard prompts.
+- TTS priming helper (`primeTTSOnFirstGesture`) and voice-loading helper (`ensureVoicesLoaded`).
+- Conversation helper fields exposed for STT/TTS: `_chatHistory`, `_contextText`, `_userMessageCount`, `_suppressAutoRestart`, `_lastUtterance` and helpers `startSharedRecognitionForConversation()` / `stopAiSpeechForConversation()`.
+
+Notes:
+- Verbose-mode visible badge and persistence across reloads are planned but not implemented yet.
+- Voice enumeration behavior may still vary across browsers; test and report any issues.

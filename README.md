@@ -35,3 +35,19 @@ Prompt Engineering Learning Lab is a web-based flashcard app designed to help us
 
 ## License
 This project is for educational and personal use. See LICENSE for details.
+
+## Recent updates (implemented)
+
+The following UX and engineering changes have been implemented in the single-file SPA (`index.html`) and are available in the app now. This list is intended as a short reference for contributors and to help when debugging or adding related features.
+
+- Centralized Settings modal for AI Tone, Humor, and global TTS voice/rate/pitch (replaces per-card voice selectors).
+- Play-sample TTS preview button and improved voice enumeration (priming + retries / onvoiceschanged handling).
+- Shared speech recognition: a single recognizer routed to modal and inline chats, with a live listening indicator and automatic sending of final transcripts.
+- Stop controls that cancel active TTS and STT and suppress automatic microphone restart until the user restarts it.
+- Enter-to-send keyboard behaviour for AI chat inputs (Enter = send, Shift+Enter = newline).
+- Configurable escalation to verbose/detailed AI responses after N user messages (setting `aiVerboseAfter`, default 5) with per-conversation message counting.
+- Injection of a session-level "VERBOSE_MODE" system instruction into conversations when the escalation threshold is reached (conversation-level `_verboseMode` flag).
+- AI prompt improvement: the app now infers a short "Video about <topic>" string from the transcript (via `inferVideoTopic`) and uses that in flashcard generation instead of raw video titles.
+- TTS priming helper (`primeTTSOnFirstGesture`) and `ensureVoicesLoaded()` helper to improve cross-browser voice availability.
+- Conversation helper fields and helpers added for STT/TTS and escalation: conversations expose `_chatHistory`, `_contextText`, `_userMessageCount`, `_suppressAutoRestart`, and `_lastUtterance`, plus `startSharedRecognitionForConversation()` and `stopAiSpeechForConversation()`.
+Note: Some voice enumeration behavior is browser-dependent; priming and retries improve reliability but may still require user interaction in certain environments. Verbose-mode persistence across page reloads and a visible "Detailed answers ON" badge are discussed but not yet implemented (see TODO.md).
