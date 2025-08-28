@@ -1461,15 +1461,19 @@ Make sure each flashcard tests something specific from the transcript content.`;
             // if no opts provided, try to read from UI controls or saved settings
             if (!opts) {
                 try {
+                    // Prefer voice selected in Settings, then Global selector, then per-card selector, then saved localStorage
+                    const settingsSel = document.getElementById('settingsVoiceSelect');
+                    const globalSel = document.getElementById('globalVoiceSelect');
                     const sel = document.getElementById('voiceSelect');
-                    const rateEl = document.getElementById('voiceRate');
-                    const pitchEl = document.getElementById('voicePitch');
+                    const rateEl = document.getElementById('voiceRate') || document.getElementById('globalVoiceRate') || document.getElementById('settingsVoiceRate');
+                    const pitchEl = document.getElementById('voicePitch') || document.getElementById('globalVoicePitch') || document.getElementById('settingsVoicePitch');
                     const savedRate = localStorage.getItem('ttsRate');
                     const savedPitch = localStorage.getItem('ttsPitch');
                     const rate = rateEl ? Number(rateEl.value) : (savedRate ? Number(savedRate) : 1);
                     const pitch = pitchEl ? Number(pitchEl.value) : (savedPitch ? Number(savedPitch) : 1);
                     opts = { rate, pitch };
-                    if (sel && sel.value) opts.voiceName = sel.value;
+                    const voiceValue = (settingsSel && settingsSel.value) ? settingsSel.value : (globalSel && globalSel.value) ? globalSel.value : (sel && sel.value) ? sel.value : (localStorage.getItem('ttsVoice') || '');
+                    if (voiceValue) opts.voiceName = voiceValue;
                 } catch (e) { opts = opts || { rate: 1, pitch: 1 }; }
             }
 
@@ -2773,15 +2777,19 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const selId = fromBack ? 'voiceSelectBack' : 'voiceSelect';
                     const rateId = fromBack ? 'voiceRateBack' : 'voiceRate';
                     const pitchId = fromBack ? 'voicePitchBack' : 'voicePitch';
-                    const sel = document.getElementById(selId);
-                    const rateEl = document.getElementById(rateId);
-                    const pitchEl = document.getElementById(pitchId);
+                    const perCardSel = document.getElementById(selId);
+                    const rateEl = document.getElementById(rateId) || document.getElementById('globalVoiceRate') || document.getElementById('settingsVoiceRate');
+                    const pitchEl = document.getElementById(pitchId) || document.getElementById('globalVoicePitch') || document.getElementById('settingsVoicePitch');
+                    const settingsSel = document.getElementById('settingsVoiceSelect');
+                    const globalSel = document.getElementById('globalVoiceSelect');
                     const savedRate = localStorage.getItem('ttsRate');
                     const savedPitch = localStorage.getItem('ttsPitch');
                     const rate = rateEl ? Number(rateEl.value) : (savedRate ? Number(savedRate) : 1);
                     const pitch = pitchEl ? Number(pitchEl.value) : (savedPitch ? Number(savedPitch) : 1);
                     const opts = { rate, pitch };
-                    if (sel && sel.value) opts.voiceName = sel.value;
+                    // Preference: settings -> global -> per-card -> saved
+                    const voiceValue = (settingsSel && settingsSel.value) ? settingsSel.value : (globalSel && globalSel.value) ? globalSel.value : (perCardSel && perCardSel.value) ? perCardSel.value : (localStorage.getItem('ttsVoice') || '');
+                    if (voiceValue) opts.voiceName = voiceValue;
                     return opts;
                 } catch (e) { return { rate: 1, pitch: 1 }; }
             }
@@ -3070,9 +3078,16 @@ Make sure each flashcard tests something specific from the transcript content.`;
             fillSelect(globalSel);
             fillSelect(settingsSel);
 
-            // restore saved voice if any
+            // restore saved voice if any and sync all selectors
             const saved = localStorage.getItem('ttsVoice');
-            if (saved) try { if (sel) sel.value = saved; if (selBack) selBack.value = saved; if (globalSel) globalSel.value = saved; if (settingsSel) settingsSel.value = saved; } catch(e) {}
+            try {
+                if (saved) {
+                    if (settingsSel) settingsSel.value = saved;
+                    if (globalSel) globalSel.value = saved;
+                    if (sel) sel.value = saved;
+                    if (selBack) selBack.value = saved;
+                }
+            } catch (e) { /* ignore */ }
 
             // restore saved AI tone/humor into settings modal elements if present
             const settingsTone = document.getElementById('settingsAiTone');
@@ -3085,9 +3100,27 @@ Make sure each flashcard tests something specific from the transcript content.`;
             // wire change handlers to persist settings
             if (sel) sel.onchange = function() { localStorage.setItem('ttsVoice', sel.value || ''); if (globalSel) globalSel.value = sel.value || ''; };
             if (selBack) selBack.onchange = function() { localStorage.setItem('ttsVoice', selBack.value || ''); if (globalSel) globalSel.value = selBack.value || ''; };
-            if (globalSel) globalSel.onchange = function() { localStorage.setItem('ttsVoice', globalSel.value || ''); if (sel) sel.value = globalSel.value || ''; if (selBack) selBack.value = globalSel.value || ''; if (settingsSel) settingsSel.value = globalSel.value || ''; };
+            if (globalSel) globalSel.onchange = function() {
+                localStorage.setItem('ttsVoice', globalSel.value || '');
+                if (sel) sel.value = globalSel.value || '';
+                if (selBack) selBack.value = globalSel.value || '';
+                if (settingsSel) settingsSel.value = globalSel.value || '';
+                // update any existing per-card selects in the All Cards table or current card
+                document.querySelectorAll('#allCardsTable select[data-card-id], #currentCardCategorySelect').forEach(el => {
+                    try { if (el && el.tagName.toLowerCase() === 'select') el.value = globalSel.value || el.value; } catch(e){}
+                });
+            };
             const settingsVoice = document.getElementById('settingsVoiceSelect');
-            if (settingsVoice) settingsVoice.onchange = function() { localStorage.setItem('ttsVoice', settingsVoice.value || ''); if (globalSel) globalSel.value = settingsVoice.value || ''; if (sel) sel.value = settingsVoice.value || ''; if (selBack) selBack.value = settingsVoice.value || ''; };
+            if (settingsVoice) settingsVoice.onchange = function() {
+                localStorage.setItem('ttsVoice', settingsVoice.value || '');
+                if (globalSel) globalSel.value = settingsVoice.value || '';
+                if (sel) sel.value = settingsVoice.value || '';
+                if (selBack) selBack.value = settingsVoice.value || '';
+                // update existing per-card selects
+                document.querySelectorAll('#allCardsTable select[data-card-id], #currentCardCategorySelect').forEach(el => {
+                    try { if (el && el.tagName.toLowerCase() === 'select') el.value = settingsVoice.value || el.value; } catch(e){}
+                });
+            };
             const rateEl = document.getElementById('voiceRate') || document.getElementById('globalVoiceRate') || document.getElementById('settingsVoiceRate');
             const pitchEl = document.getElementById('voicePitch') || document.getElementById('globalVoicePitch') || document.getElementById('settingsVoicePitch');
             const rateElBack = document.getElementById('voiceRateBack');
@@ -3118,6 +3151,15 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 rateElBack.oninput = function() { localStorage.setItem('ttsRate', rateElBack.value); document.getElementById('voiceRateLabelBack') && (document.getElementById('voiceRateLabelBack').textContent = rateElBack.value); if (rateEl) rateEl.value = rateElBack.value; };
                 document.getElementById('voiceRateLabelBack') && (document.getElementById('voiceRateLabelBack').textContent = rateElBack.value);
             }
+            // After populating and wiring, ensure current card audio controls reflect saved voice
+            try {
+                const savedVoiceNow = localStorage.getItem('ttsVoice') || '';
+                if (savedVoiceNow) {
+                    // set any per-card selectors rendered for the current card
+                    const pc = document.querySelectorAll('#flashcardContainer select[id^="voiceSelect"]');
+                    pc.forEach(p => { try { p.value = savedVoiceNow; } catch(e){} });
+                }
+            } catch(e) {}
             if (pitchElBack) {
                 const savedPitch = localStorage.getItem('ttsPitch');
                 pitchElBack.value = savedPitch ? savedPitch : pitchElBack.value;
