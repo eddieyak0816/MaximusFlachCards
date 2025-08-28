@@ -2727,7 +2727,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                 </div>
                             </div>
                             <div class="mt-4 flex items-center justify-center gap-3">
-                                <button onclick="openAiChatModal('card', ${currentCardIndex})" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm">💬 Chat about this card</button>
+                                <button onclick="openInlineCardConversation(${currentCardIndex}, this)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm">💬 Chat about this card</button>
                                 <button onclick="flipCardBack()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">← Back to Question</button>
                             </div>
                         </div>
@@ -3045,6 +3045,63 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 const messagesElStart = existing.querySelector('.conv-messages');
                 startSharedRecognitionForConversation({ _chatHistory: existing._chatHistory, _contextText: existing._contextText, convEl: messagesElStart, inputEl: inputElStart, micBtn: micBtnStart });
             } catch (e) { console.error('openInlineConversation failed', e); }
+        }
+
+        // Open an inline conversation for a flashcard (card index) and start listening immediately
+        function openInlineCardConversation(index, triggerEl) {
+            try {
+                // find the card back container
+                const container = document.getElementById('flashcardContainer');
+                if (!container) return;
+                // the card DOM was rendered inside flashcardContainer; find the back side element
+                const cardBackEl = container.querySelector('#cardBack');
+                if (!cardBackEl) return;
+                // If an inline conv already exists, reuse it
+                let existing = cardBackEl.querySelector('.inline-ai-conv');
+                if (!existing) {
+                    const conv = document.createElement('div');
+                    conv.className = 'inline-ai-conv mt-3 p-3 border border-gray-200 rounded bg-white';
+                    conv.innerHTML = `
+                        <div class="conv-messages" style="height:160px;overflow:auto;padding:6px;background:#fafafa;border:1px solid #eee;border-radius:6px;margin-bottom:8px;"></div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <input class="conv-input" placeholder="Speak or type..." style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;" />
+                            <button class="conv-mic-btn" style="padding:8px 10px;border-radius:6px;background:#f3f4f6;border:none;cursor:pointer;">🎤</button>
+                            <button class="conv-stop-btn" style="padding:8px 10px;border-radius:6px;background:#ef4444;color:white;border:none;cursor:pointer;margin-left:4px;">■ Stop</button>
+                            <button class="conv-send-btn" style="padding:8px 12px;border-radius:6px;background:#2563eb;color:white;border:none;cursor:pointer;">Send</button>
+                        </div>
+                    `;
+                    cardBackEl.appendChild(conv);
+                    existing = conv;
+                    // prepare conversation metadata
+                    existing._chatHistory = [];
+                    // build context from the currently shown card
+                    const card = studyQueue[index] || {};
+                    existing._contextText = `Card front: ${card.front || ''}\n\nCard back: ${card.back || ''}\n\nTranscript:\n${(videoData && videoData.transcript) ? videoData.transcript : ''}`;
+                    const micBtn = existing.querySelector('.conv-mic-btn');
+                    const sendBtn = existing.querySelector('.conv-send-btn');
+                    const stopBtn = existing.querySelector('.conv-stop-btn');
+                    const inputEl = existing.querySelector('.conv-input');
+                    const messagesEl = existing.querySelector('.conv-messages');
+                    // wire send
+                    sendBtn.onclick = () => {
+                        const t = (inputEl.value || '').trim(); if (!t) return; appendAiMessage('You', t, messagesEl); inputEl.value = '';
+                        sendAiChatMessage(t, existing._contextText, { _chatHistory: existing._chatHistory, _contextText: existing._contextText, convEl: messagesEl });
+                    };
+                    // mic button starts shared recognition for this conv
+                    micBtn.onclick = () => {
+                        startSharedRecognitionForConversation({ _chatHistory: existing._chatHistory, _contextText: existing._contextText, convEl: messagesEl, inputEl, micBtn });
+                    };
+                    // stop button cancels speaking and prevents automatic restart
+                    try {
+                        if (stopBtn) stopBtn.onclick = () => { try { stopAiSpeechForConversation(existing); } catch (e) { console.error(e); } };
+                    } catch (e) {}
+                }
+                // start listening immediately
+                const micBtnStart = existing.querySelector('.conv-mic-btn');
+                const inputElStart = existing.querySelector('.conv-input');
+                const messagesElStart = existing.querySelector('.conv-messages');
+                startSharedRecognitionForConversation({ _chatHistory: existing._chatHistory, _contextText: existing._contextText, convEl: messagesElStart, inputEl: inputElStart, micBtn: micBtnStart });
+            } catch (e) { console.error('openInlineCardConversation failed', e); }
         }
 
         // Populate available SpeechSynthesis voices into the voiceSelect control
