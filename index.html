@@ -1372,8 +1372,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 const tx0 = db.transaction(['flashcards'], 'readwrite');
                 const store0 = tx0.objectStore('flashcards');
                 const flashcardData0 = {
-                    front: flashcard.front,
-                    back: flashcard.back,
+                    front: stripEmojis(flashcard.front || ''),
+                    back: stripEmojis(flashcard.back || ''),
                     videoTitle: videoData.title,
                     videoUrl: videoData.url,
                     subject: videoData.subject,
@@ -1401,9 +1401,13 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
                 const tx2 = db.transaction(['flashcards'], 'readwrite');
                 const store2 = tx2.objectStore('flashcards');
+                // sanitize text: remove emojis from front/back
+                const sanitizedFront = stripEmojis(flashcard.front || '');
+                const sanitizedBack = stripEmojis(flashcard.back || '');
+
                 const flashcardData = {
-                    front: flashcard.front,
-                    back: flashcard.back,
+                    front: sanitizedFront,
+                    back: sanitizedBack,
                     videoTitle: videoData.title,
                     videoUrl: videoData.url,
                     subject: videoData.subject,
@@ -1447,6 +1451,13 @@ Make sure each flashcard tests something specific from the transcript content.`;
         // --- Text-to-Speech helpers (card-level audio) ---
         function stopSpeech() {
             try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+        }
+
+        // Remove emoji characters from a string
+        function stripEmojis(str) {
+            if (!str) return '';
+            // Basic emoji removal using Unicode ranges (covers most common emojis)
+            return String(str).replace(/[\u{1F300}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1F1E6}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
         }
 
         function speakTextWithOptions(text, opts) {
@@ -2683,7 +2694,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 <div class="bg-white border-2 border-gray-200 rounded-xl p-8 text-center min-h-64 flex flex-col justify-center shadow-lg">
                     <div id="cardContent">
                         <div id="cardFront" class="card-side">
-                            <div class="text-lg font-semibold text-gray-800 mb-4">${card.front || ''}</div>
+                            <div class="text-lg font-semibold text-gray-800 mb-4">${stripEmojis(card.front || '')}</div>
                             <div class="mb-3">
                                 <button data-play-question="${escapeJs(card.front || '')}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Question</button>
                                 <button data-stop-audio class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
@@ -2694,7 +2705,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             </div>
                         </div>
                         <div id="cardBack" class="card-side hidden">
-                            <div class="text-lg font-semibold text-gray-800 mb-4">${card.back || ''}</div>
+                            <div class="text-lg font-semibold text-gray-800 mb-4">${stripEmojis(card.back || '')}</div>
                             <div class="mb-3">
                                 <button data-play-answer="${escapeJs(card.back || '')}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Answer</button>
                                 <button data-play-qa data-play-qa-q="${escapeJs(card.front || '')}" data-play-qa-a="${escapeJs(card.back || '')}" class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded text-sm mr-2">🔁 Play Q→A</button>
@@ -3367,8 +3378,11 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
         // Save created card into IndexedDB with sensible defaults and optional category preset
         function saveCreatedCard() {
-            const front = document.getElementById('createFront').value.trim();
-            const back = document.getElementById('createBack').value.trim();
+            let front = document.getElementById('createFront').value.trim();
+            let back = document.getElementById('createBack').value.trim();
+            // remove emojis before saving
+            front = stripEmojis(front);
+            back = stripEmojis(back);
             const cat = document.getElementById('createCategory').value;
             if (!front || !back) return alert('Please provide both front and back text for the card');
 
@@ -4584,8 +4598,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const req = store.get(cardId);
             req.onsuccess = function(evt) {
                 const card = evt.target.result || { id: cardId };
-                card.front = front;
-                card.back = back;
+                card.front = stripEmojis(front);
+                card.back = stripEmojis(back);
                 card.categoryId = categoryId;
                 store.put(card);
             };
@@ -4984,8 +4998,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const req = store.get(cardId);
             req.onsuccess = function(evt) {
                 const card = evt.target.result || { id: cardId };
-                card.front = front;
-                card.back = back;
+                card.front = stripEmojis(front);
+                card.back = stripEmojis(back);
                 card.categoryId = categoryId;
                 store.put(card);
             };
