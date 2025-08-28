@@ -23,13 +23,18 @@
         <div class="text-center mb-8">
             <h1 class="text-4xl font-bold text-white mb-2">🧠 Prompt Engineering Learning Lab</h1>
             <p class="text-blue-100 text-lg">Learn prompt engineering by creating smart flashcards from videos!</p>
-                <div style="position:absolute;right:28px;top:28px;">
-                    <button id="openSettingsBtn" onclick="openSettingsModal()" class="bg-white text-blue-600 px-3 py-1 rounded shadow-sm">Settings</button>
-                </div>
+                
         </div>
 
         <!-- Main Content -->
-        <div class="bg-white rounded-2xl shadow-2xl p-8">
+        <div class="bg-white rounded-2xl shadow-2xl p-8" style="position:relative;">
+            <button id="openSettingsBtn" onclick="openSettingsModal()" aria-label="Open settings" style="position:absolute;top:12px;right:12px;background:transparent;border:none;cursor:pointer;padding:6px;border-radius:6px;" title="Settings">
+                <!-- gear icon -->
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z" stroke="#374151" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 0 1 4.27 16.9l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09c.65 0 1.2-.4 1.51-1a1.65 1.65 0 0 0-.33-1.82L4.3 6.27A2 2 0 0 1 7.13 3.44l.06.06c.5.5 1.27.65 1.82.33.45-.24 1-.38 1.51-.38H12c.5 0 1.06.12 1.51.38.55.32 1.32.17 1.82-.33l.06-.06A2 2 0 0 1 19.73 6.3l-.06.06c-.32.5-.17 1.27.16 1.82.24.45.38 1 .38 1.51V12c0 .5-.12 1.06-.38 1.51-.33.55-.48 1.32-.16 1.82l.06.06z" stroke="#374151" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
             <!-- Step Navigation -->
             <div class="flex justify-center mb-8">
                 <div class="flex space-x-4">
