@@ -4081,22 +4081,22 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     // Build table with bulk controls
                     let tableHtml = `<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;'>
                         <div style='display:flex;gap:8px;align-items:center;'>
-                            <button onclick="bulkDeleteSelected()" style='background:#e53e3e;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;margin-right:8px;'>Delete Selected</button>
+                            <button onclick="bulkDeleteSelected()" style='background:#e53e3e;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-right:6px;height:30px;'>Delete Selected</button>
                             <select id='bulkCategorySelect' style='padding:6px;border-radius:6px;border:1px solid #ccc;'>
                                 <option value=''>Set category...</option>
                             </select>
-                            <button onclick="bulkChangeCategory()" style='background:#3182ce;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;margin-left:8px;'>Apply</button>
+                            <button onclick="bulkChangeCategory()" style='background:#3182ce;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-left:8px;height:30px;'>Apply</button>
                             <label style='margin-left:8px;font-size:0.9rem;color:#4a5568;'>Bulk due:</label>
                             <input type='date' id='bulkDueInput' style='padding:6px;border-radius:6px;border:1px solid #ccc;' />
-                            <button onclick='bulkApplyDueDate()' style='background:#805ad5;color:white;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;margin-left:6px;'>Apply date to selected</button>
+                            <button onclick='bulkApplyDueDate()' style='background:#805ad5;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-left:6px;height:30px;'>Apply date to selected</button>
                         </div>
                         <div style='display:flex;gap:12px;align-items:center;'>
                             <label style='font-size:0.9rem;color:#4a5568;'>Filter:</label>
-                            <select id='filterCategorySelect' onchange='applyCategoryFilter()' style='padding:6px;border-radius:6px;border:1px solid #ccc;'>
+                            <select id='filterCategorySelect' onchange='applyCategoryFilter()' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;font-size:0.9rem;height:30px;'>
                                 <option value='__all__'>All categories</option>
                                 ${catList.map(c=>`<option value='${c.id}'>${c.name}</option>`).join('')}
                             </select>
-                            <a href='javascript:void(0)' onclick='showRatingFormula()' style='font-size:0.85rem;color:#2563eb;text-decoration:underline;'>How ratings work</a>
+                            <a href='javascript:void(0)' onclick='showRatingFormula()' style='font-size:0.78rem;color:#2563eb;text-decoration:underline;'>How ratings work</a>
                         </div>
                     </div>
                 <table style='width:100%;border-collapse:collapse;'>
@@ -4153,6 +4153,18 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const bulkSelectEl = document.getElementById('bulkCategorySelect');
                     if (bulkSelectEl) bulkSelectEl.insertAdjacentHTML('beforeend', bulkOptions);
 
+                    // If a filter was active before the refresh, restore it and reapply filtering
+                    try {
+                        const saved = window._allCardsCurrentFilter;
+                        const filterEl = document.getElementById('filterCategorySelect');
+                        if (saved && filterEl) {
+                            filterEl.value = saved;
+                            applyCategoryFilter();
+                        }
+                        // clear saved filter after restore
+                        window._allCardsCurrentFilter = null;
+                    } catch(e) { console.error('restore filter error', e); }
+
                     // Bind master checkbox and row checkbox handlers to ensure select-all works
                     (function bindSelectionHandlers(){
                         const master = document.getElementById('masterSelect');
@@ -4164,11 +4176,17 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         }
 
                         if (master) {
-                            // replace inline handler with robust listener
+                            // replace inline handler with robust listener that only toggles visible rows
                             master.removeAttribute('onchange');
                             master.addEventListener('change', () => {
+                                // Save the current filter so if the table refreshes we can restore it
+                                try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {}
                                 const rows = document.querySelectorAll('.rowSelect');
-                                rows.forEach(r => { r.checked = master.checked; });
+                                rows.forEach(r => {
+                                    const tr = r.closest('tr');
+                                    if (tr && tr.style.display === 'none') return; // skip hidden rows
+                                    r.checked = master.checked;
+                                });
                             });
                         }
 
@@ -4181,19 +4199,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 };
                 
 
-            // Toggle master select checkbox
-            function toggleMasterSelect(master) {
-                const rows = document.querySelectorAll('.rowSelect');
-                rows.forEach(r => { r.checked = master.checked; });
-                // If rows change later, ensure master reflects current state
-                rows.forEach(r => r.addEventListener('change', () => {
-                    const all = document.querySelectorAll('.rowSelect');
-                    const checked = document.querySelectorAll('.rowSelect:checked');
-                    const masterBox = document.getElementById('masterSelect');
-                    if (!masterBox) return;
-                    masterBox.checked = (all.length > 0 && checked.length === all.length);
-                }));
-            }
+            // Toggle master select behavior is bound above (only affects visible rows)
 
             // Get selected card ids from the table
             function getSelectedCardIds() {
@@ -4663,8 +4669,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
         }
 
         function getSelectedCardIds() {
-            const rows = document.querySelectorAll('.rowSelect:checked');
-            return Array.from(rows).map(r => parseInt(r.getAttribute('data-id'))).filter(Boolean);
+            // Only return ids of checkboxes that are checked and whose row is visible
+            const rows = Array.from(document.querySelectorAll('.rowSelect')).filter(r => r.checked && (r.closest('tr') ? r.closest('tr').style.display !== 'none' : true));
+            return rows.map(r => parseInt(r.getAttribute('data-id'))).filter(Boolean);
         }
 
         function bulkDeleteSelected() {
@@ -4685,6 +4692,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             if (!sel) return;
             const newCat = sel.value;
             const coercedCat = (newCat === '' || newCat === null) ? '' : (isNaN(parseInt(newCat)) ? newCat : parseInt(newCat));
+            try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {}
             if (!db) return alert('DB not ready');
             const tx = db.transaction(['flashcards'], 'readwrite');
             const store = tx.objectStore('flashcards');
@@ -4712,6 +4720,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const y = parseInt(parts[0], 10), m = parseInt(parts[1], 10) - 1, d = parseInt(parts[2], 10);
             const next = new Date(y, m, d, 12, 0, 0, 0);
             if (isNaN(next)) return alert('Invalid date');
+            try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {}
             if (!db) return alert('DB not ready');
             const tx = db.transaction(['flashcards'], 'readwrite');
             const store = tx.objectStore('flashcards');
