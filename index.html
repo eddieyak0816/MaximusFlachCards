@@ -4078,25 +4078,35 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 catStore.getAll().onsuccess = function(evt) {
                     const catList = evt.target.result || [];
 
-                    // Build table with bulk controls
-                    let tableHtml = `<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;'>
-                        <div style='display:flex;gap:8px;align-items:center;'>
+                    // Build table with bulk controls and filters arranged on two rows
+                    let tableHtml = `<div style='display:flex;flex-direction:column;gap:8px;justify-content:space-between;align-items:stretch;margin-bottom:8px;'>
+                        <div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap;'>
                             <button onclick="bulkDeleteSelected()" style='background:#e53e3e;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-right:6px;height:30px;'>Delete Selected</button>
-                            <select id='bulkCategorySelect' style='padding:6px;border-radius:6px;border:1px solid #ccc;'>
+                            <select id='bulkCategorySelect' style='padding:6px;border-radius:6px;border:1px solid #ccc;height:30px;'>
                                 <option value=''>Set category...</option>
                             </select>
                             <button onclick="bulkChangeCategory()" style='background:#3182ce;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-left:8px;height:30px;'>Apply</button>
                             <label style='margin-left:8px;font-size:0.9rem;color:#4a5568;'>Bulk due:</label>
-                            <input type='date' id='bulkDueInput' style='padding:6px;border-radius:6px;border:1px solid #ccc;' />
+                            <input type='date' id='bulkDueInput' style='padding:4px 6px;border-radius:6px;border:1px solid #ccc;height:30px;' />
                             <button onclick='bulkApplyDueDate()' style='background:#805ad5;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-left:6px;height:30px;'>Apply date to selected</button>
                         </div>
-                        <div style='display:flex;gap:12px;align-items:center;'>
+                        <div style='display:flex;gap:10px;align-items:center;flex-wrap:wrap;'>
                             <label style='font-size:0.9rem;color:#4a5568;'>Filter:</label>
-                            <select id='filterCategorySelect' onchange='applyCategoryFilter()' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;font-size:0.9rem;height:30px;'>
+                            <select id='filterCategorySelect' onchange='applyTableFilters()' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;font-size:0.9rem;height:30px;'>
                                 <option value='__all__'>All categories</option>
                                 ${catList.map(c=>`<option value='${c.id}'>${c.name}</option>`).join('')}
                             </select>
-                            <a href='javascript:void(0)' onclick='showRatingFormula()' style='font-size:0.78rem;color:#2563eb;text-decoration:underline;'>How ratings work</a>
+                            <label style='font-size:0.9rem;color:#4a5568;margin-left:6px;'>Search:</label>
+                            <input id='searchKeyword' placeholder='keyword' oninput='applyTableFilters()' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;height:30px;font-size:0.9rem;' />
+                            <select id='dueOp' onchange='applyTableFilters()' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;height:30px;font-size:0.9rem;'>
+                                <option value=''>due</option>
+                                <option value='='>=</option>
+                                <option value='>'>></option>
+                                <option value='<'><</option>
+                            </select>
+                            <input id='dueDateInput' type='date' onchange='applyTableFilters()' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;height:30px;font-size:0.9rem;' />
+                            <button onclick='clearAllFilters()' style='padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;height:30px;background:#edf2f7;color:#2d3748;cursor:pointer;margin-left:6px;'>Clear</button>
+                            <a href='javascript:void(0)' onclick='showRatingFormula()' style='font-size:0.78rem;color:#2563eb;text-decoration:underline;margin-left:8px;'>How ratings work</a>
                         </div>
                     </div>
                 <table style='width:100%;border-collapse:collapse;'>
@@ -4128,7 +4138,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         });
                         optionsHtml += "<option value='__add_new__'>Add New...</option>";
 
-                        tableHtml += `<tr data-cat='${cardCatId}'>
+                        const dataNext = card.nextReview ? card.nextReview : '';
+                        tableHtml += `<tr data-cat='${cardCatId}' data-next='${dataNext}'>
                             <td style='padding:8px;border:1px solid #ddd;text-align:center;'><input type='checkbox' class='rowSelect' data-id='${card.id}'/></td>
                             <td style='padding:8px;border:1px solid #ddd;vertical-align:top;'><div style="display:flex;gap:8px;align-items:center;"><select data-card-id='${card.id}' onchange='handleRowCategoryChange(${card.id}, this.value)' style='flex:1;padding:6px;border-radius:6px;border:1px solid #ccc;'>${optionsHtml}</select><div data-add-container='${card.id}'></div></div></td>
                             <td style='padding:8px;border:1px solid #ddd;vertical-align:top;'><textarea id='front-${card.id}' style='width:100%;min-height:120px;resize:vertical;padding:8px;border-radius:6px;border:1px solid #ddd;' onchange='saveRowNow(${card.id})'>${card.front}</textarea></td>
@@ -4153,13 +4164,13 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const bulkSelectEl = document.getElementById('bulkCategorySelect');
                     if (bulkSelectEl) bulkSelectEl.insertAdjacentHTML('beforeend', bulkOptions);
 
-                    // If a filter was active before the refresh, restore it and reapply filtering
+            // If a filter was active before the refresh, restore it and reapply filtering
                     try {
                         const saved = window._allCardsCurrentFilter;
                         const filterEl = document.getElementById('filterCategorySelect');
                         if (saved && filterEl) {
                             filterEl.value = saved;
-                            applyCategoryFilter();
+                applyTableFilters();
                         }
                         // clear saved filter after restore
                         window._allCardsCurrentFilter = null;
@@ -4641,19 +4652,83 @@ Make sure each flashcard tests something specific from the transcript content.`;
         }
 
         function applyCategoryFilter() {
+                // Delegate to unified table filter
+                try { applyTableFilters(); } catch(e) { console.error('applyCategoryFilter error', e); }
+        }
+
+        function applyTableFilters() {
             try {
                 const filterSel = document.getElementById('filterCategorySelect');
-                if (!filterSel) return;
-                const val = filterSel.value;
+                const keywordEl = document.getElementById('searchKeyword');
+                const dueOp = document.getElementById('dueOp');
+                const dueInput = document.getElementById('dueDateInput');
+                const catVal = filterSel ? filterSel.value : '__all__';
+                const keyword = keywordEl ? (keywordEl.value || '').toLowerCase().trim() : '';
+                const op = dueOp ? dueOp.value : '';
+                const dueVal = dueInput ? dueInput.value : '';
+
+                // Save filter persistently (localStorage) so modal refreshes keep it
+                try { localStorage.setItem('allCardsFilter', catVal); } catch(e) {}
+
                 document.querySelectorAll('#flashcardTableContainer table tbody tr').forEach(tr => {
                     const cat = tr.getAttribute('data-cat') || '';
-                    if (val === '' || val === '__all__') {
-                        tr.style.display = '';
-                    } else {
-                        if (String(cat) === String(val)) tr.style.display = ''; else tr.style.display = 'none';
+                    const nextIso = tr.getAttribute('data-next') || '';
+                    const front = (tr.querySelector('textarea[id^="front-"]') ? tr.querySelector('textarea[id^="front-"]').value : '').toLowerCase();
+                    const back = (tr.querySelector('textarea[id^="back-"]') ? tr.querySelector('textarea[id^="back-"]').value : '').toLowerCase();
+
+                    let visible = true;
+                    // Category filter
+                    if (catVal && catVal !== '__all__') {
+                        visible = (String(cat) === String(catVal));
                     }
+                    // Keyword filter
+                    if (visible && keyword) {
+                        visible = (front.indexOf(keyword) !== -1) || (back.indexOf(keyword) !== -1);
+                    }
+                    // Due date filter
+                    if (visible && op && dueVal) {
+                        // Parse dueVal (YYYY-MM-DD) as local date components to avoid Date string UTC parsing differences
+                        const parts = String(dueVal).split('-');
+                        if (parts.length === 3) {
+                            const y = parseInt(parts[0],10), m = parseInt(parts[1],10)-1, d = parseInt(parts[2],10);
+                            // local day's start and end (inclusive)
+                            const dayStart = new Date(y, m, d, 0,0,0,0).getTime();
+                            const dayEnd = new Date(y, m, d, 23,59,59,999).getTime();
+                            const nextTime = nextIso ? new Date(nextIso).getTime() : null;
+                            if (!nextTime) {
+                                visible = false;
+                            } else if (op === '=') {
+                                visible = nextTime >= dayStart && nextTime <= dayEnd;
+                            } else if (op === '>') {
+                                // strictly after the end of the chosen day
+                                visible = nextTime > dayEnd;
+                            } else if (op === '<') {
+                                // strictly before the start of the chosen day
+                                visible = nextTime < dayStart;
+                            }
+                        } else {
+                            visible = false;
+                        }
+                    }
+
+                    tr.style.display = visible ? '' : 'none';
                 });
-            } catch (e) { console.error('applyCategoryFilter error', e); }
+            } catch (e) { console.error('applyTableFilters error', e); }
+        }
+
+        function clearAllFilters() {
+            try {
+                const filterSel = document.getElementById('filterCategorySelect');
+                const keywordEl = document.getElementById('searchKeyword');
+                const dueOp = document.getElementById('dueOp');
+                const dueInput = document.getElementById('dueDateInput');
+                if (filterSel) filterSel.value = '__all__';
+                if (keywordEl) keywordEl.value = '';
+                if (dueOp) dueOp.value = '';
+                if (dueInput) dueInput.value = '';
+                try { localStorage.removeItem('allCardsFilter'); } catch(e) {}
+                applyTableFilters();
+            } catch(e) { console.error('clearAllFilters error', e); }
         }
 
         function showRatingFormula() {
