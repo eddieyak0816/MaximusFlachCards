@@ -11,73 +11,75 @@
                 return;
             }
 
-            const modal = document.createElement('div');
-            modal.id = 'readingAdventureModal';
-            modal.style.position = 'fixed';
-            modal.style.left = '0';
-            modal.style.top = '0';
-            modal.style.width = '100vw';
-            modal.style.height = '100vh';
-            modal.style.background = 'rgba(0,0,0,0.5)';
-            modal.style.zIndex = '12000';
-            modal.style.display = 'flex';
-            modal.style.justifyContent = 'center';
-            modal.style.alignItems = 'center';
+            // Create a full-page reading adventure view and hide the main app container
+            const existingPage = document.getElementById('readingAdventurePage');
+            const mainContainer = document.querySelector('.container');
+            if (existingPage) {
+                // show existing page and hide main container
+                if (mainContainer) mainContainer.style.display = 'none';
+                existingPage.style.display = 'block';
+            } else {
+                const page = document.createElement('div');
+                page.id = 'readingAdventurePage';
+                page.style.width = '100%';
+                page.style.minHeight = '100vh';
+                page.style.boxSizing = 'border-box';
+                page.style.padding = '24px';
+                page.style.background = 'white';
+                page.style.overflowY = 'auto';
+                page.style.zIndex = '11000';
 
-            const card = document.createElement('div');
-            card.style.background = 'white';
-            card.style.padding = '18px';
-            card.style.borderRadius = '12px';
-            card.style.width = '92vw';
-            card.style.maxWidth = '880px';
-            card.style.boxSizing = 'border-box';
-            card.style.boxShadow = '0 8px 40px rgba(0,0,0,0.15)';
-            // allow scrolling when viewport is small
-            card.style.maxHeight = '85vh';
-            card.style.overflowY = 'auto';
+                page.innerHTML = `
+                    <div style="max-width:980px;margin:0 auto;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                            <h2 style="margin:0;font-size:1.5rem;">Maximus's AI Reading Adventure</h2>
+                            <div>
+                                <button id="readingCloseBtn" style="background:#ef4444;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;">← Back</button>
+                            </div>
+                        </div>
+                        <div style="margin-bottom:12px;color:#374151;">
+                            <p style="margin:0 0 8px 0;">Create a fun story based on the video or transcript you just studied. This area is full-page for better visibility. All code lives in <code>reading_adventure.js</code>.</p>
+                        </div>
 
-            card.innerHTML = `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                    <h2 style="margin:0;font-size:1.25rem;">Maximus's AI Reading Adventure</h2>
-                    <div>
-                        <button id="readingCloseBtn" style="background:#ef4444;color:#fff;border:none;padding:6px 10px;border-radius:8px;cursor:pointer;">Close</button>
+                        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+                            <input id="raTitle" placeholder="Story title (optional)" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;" />
+                            <select id="raRole" style="padding:8px;border:1px solid #ddd;border-radius:6px;">
+                                <option value="Curious Explorer">Curious Explorer</option>
+                                <option value="Brave Knight">Brave Knight</option>
+                                <option value="Silly Scientist">Silly Scientist</option>
+                                <option value="Space Pilot">Space Pilot</option>
+                            </select>
+                            <button id="raSuggest" style="background:#10b981;color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer;">AI Suggest</button>
+                        </div>
+
+                        <div style="margin-bottom:12px;">
+                            <textarea id="raTranscript" placeholder="Paste a short transcript or notes here (optional)" style="width:100%;height:140px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea>
+                        </div>
+
+                        <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px;">
+                            <button id="raGenerate" style="background:#2563eb;color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer;">Write My Story</button>
+                        </div>
+
+                        <div id="raOutput" style="margin-top:14px;display:none;">
+                            <hr style="border:none;border-top:1px solid #eee;margin:12px 0;" />
+                            <div id="raPages" style="max-height:60vh;overflow:auto;padding:6px;">
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div style="margin-bottom:12px;color:#374151;">
-                    <p style="margin:0 0 8px 0;">Create a fun, illustrated story based on the video or transcript you just studied. This is an experimental feature; all code lives in a separate file (<code>reading_adventure.js</code>).</p>
-                </div>
+                `;
 
-                <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-                    <input id="raTitle" placeholder="Story title (optional)" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;" />
-                    <select id="raRole" style="padding:8px;border:1px solid #ddd;border-radius:6px;">
-                        <option value="Curious Explorer">Curious Explorer</option>
-                        <option value="Brave Knight">Brave Knight</option>
-                        <option value="Silly Scientist">Silly Scientist</option>
-                        <option value="Space Pilot">Space Pilot</option>
-                    </select>
-                    <button id="raSuggest" style="background:#10b981;color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer;">AI Suggest</button>
-                </div>
+                // Hide main container and append page
+                if (mainContainer) mainContainer.style.display = 'none';
+                document.body.appendChild(page);
 
-                <div style="margin-bottom:12px;">
-                    <textarea id="raTranscript" placeholder="Paste a short transcript or notes here (optional)" style="width:100%;height:90px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea>
-                </div>
-
-                <div style="display:flex;gap:8px;justify-content:flex-end;">
-                    <button id="raGenerate" style="background:#2563eb;color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer;">Write My Story</button>
-                </div>
-
-                <div id="raOutput" style="margin-top:14px;display:none;">
-                    <hr style="border:none;border-top:1px solid #eee;margin:12px 0;" />
-                    <div id="raPages" style="max-height:360px;overflow:auto;padding:6px;">
-                    </div>
-                </div>
-            `;
-
-            modal.appendChild(card);
-            document.body.appendChild(modal);
-
-            // Wire buttons
-            document.getElementById('readingCloseBtn').onclick = () => { modal.style.display = 'none'; };
+                // Wire back button
+                document.getElementById('readingCloseBtn').onclick = () => {
+                    // remove the page and restore main UI
+                    const pg = document.getElementById('readingAdventurePage');
+                    if (pg) pg.style.display = 'none';
+                    if (mainContainer) mainContainer.style.display = '';
+                };
+            }
 
             document.getElementById('raSuggest').onclick = () => {
                 // Minimal local-suggestion behavior (no AI call) — cycles through fun titles
