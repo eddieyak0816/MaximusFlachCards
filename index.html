@@ -54,6 +54,11 @@
                 </div>
             </div>
 
+            <!-- Reading Adventure quick access -->
+            <div class="text-center mb-6">
+                <button onclick="openReadingAdventure()" class="bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded-lg font-semibold">📖 Maximus's Reading Adventure</button>
+            </div>
+
             <!-- Navigation Buttons -->
             <div id="navigationButtons" class="flex justify-between mb-6">
                 <button id="backButton" onclick="goBack()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg hidden">
@@ -5454,7 +5459,15 @@ Make sure each flashcard tests something specific from the transcript content.`;
         // Load saved API keys on page load
         setTimeout(() => {
             loadSavedApiKeys();
-        }, 100);
+        }, 300);
+
+        // Load Reading Adventure script (separate file)
+        try {
+            const s = document.createElement('script');
+            s.src = 'reading_adventure.js';
+            s.defer = true;
+            document.body.appendChild(s);
+        } catch (e) { console.error('Failed to load reading_adventure.js', e); }
     </script>
     <!-- Removed Cloudflare injected /cdn-cgi challenge-platform script which breaks local file:// usage. If you deploy behind Cloudflare, their runtime may inject this automatically. -->
 </body>
