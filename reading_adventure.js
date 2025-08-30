@@ -52,11 +52,32 @@
                             <button id="raSuggest" style="background:#10b981;color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer;">AI Suggest</button>
                         </div>
 
-                        <div style="margin-bottom:12px;">
-                            <textarea id="raTranscript" placeholder="Paste a short transcript or notes here (optional)" style="width:100%;height:140px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea>
+                        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+                            <input id="raSetting" placeholder="Setting (where the story takes place)" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;" />
+                            <button id="raSuggestSetting" data-field="setting" style="background:#10b981;color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer;">AI Suggest</button>
                         </div>
 
-                        <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px;">
+                        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+                            <input id="raPlot" placeholder="Plot twist or challenge (optional)" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;" />
+                            <button id="raSuggestPlot" data-field="plot" style="background:#10b981;color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer;">AI Suggest</button>
+                        </div>
+
+                        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+                            <select id="raMood" style="padding:8px;border:1px solid #ddd;border-radius:6px;">
+                                <option value="whimsical">Whimsical</option>
+                                <option value="adventurous">Adventurous</option>
+                                <option value="calm">Calm</option>
+                                <option value="mysterious">Mysterious</option>
+                            </select>
+                            <button id="raSuggestMood" data-field="mood" style="background:#10b981;color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer;">AI Suggest</button>
+                            <button id="raBrainstorm" style="background:#f59e0b;color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer;">Start Brainstorm</button>
+                        </div>
+
+                    <div style="margin-bottom:12px;">
+                        <label style="font-weight:500;">Paste a short transcript or notes here (optional)</label>
+                        <div style="font-size:12px;color:#6b7280;margin-bottom:4px;">The AI will analyze this content and incorporate key concepts into your story</div>
+                        <textarea id="raTranscript" placeholder="Paste your study material, video transcript, or notes here..." style="width:100%;height:140px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea>
+                    </div>                        <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px;">
                             <button id="raGenerate" style="background:#2563eb;color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer;">Write My Story</button>
                         </div>
 
@@ -81,21 +102,180 @@
                 };
             }
 
-            document.getElementById('raSuggest').onclick = () => {
-                // Minimal local-suggestion behavior (no AI call) — cycles through fun titles
-                const samples = [
+            document.getElementById('raSuggest').onclick = () => suggestForField('title');
+
+            // per-field AI Suggest handlers
+            const suggestSamples = {
+                title: [
                     'Maximus and the Moonlit Map',
                     'The Little Prompt that Could',
                     'Maximus and the Robot Garden',
                     'The Secret Instructions Adventure'
-                ];
-                const t = samples[Math.floor(Math.random()*samples.length)];
-                document.getElementById('raTitle').value = t;
+                ]
             };
+
+            async function suggestForField(field) {
+                const current = {
+                    title: (document.getElementById('raTitle')||{}).value || '',
+                    role: (document.getElementById('raRole')||{}).value || '',
+                    setting: (document.getElementById('raSetting')||{}).value || '',
+                    plot: (document.getElementById('raPlot')||{}).value || '',
+                    mood: (document.getElementById('raMood')||{}).value || '',
+                    transcript: (document.getElementById('raTranscript')||{}).value || ''
+                };
+
+                if (!current.transcript && field === 'title') {
+                    const arr = suggestSamples.title;
+                    const t = arr[Math.floor(Math.random()*arr.length)];
+                    document.getElementById('raTitle').value = t;
+                    return;
+                }
+
+                const humanField = field === 'plot' ? 'plot twist or challenge' : field;
+                const prompt = `You are a creative assistant for writing short children's stories. Provide a single concise ${humanField} suggestion based on the following partial story details:\n\nTitle: ${current.title}\nRole: ${current.role}\nSetting: ${current.setting}\nMood: ${current.mood}\nTranscript/Notes: ${current.transcript.slice(0,600)}\n\nReturn only the suggested text (no explanation).`;
+
+                const res = await generateStoryViaProviders(prompt);
+                if (res && res.success && res.text) {
+                    const suggestion = (res.text || '').trim().split('\n').filter(Boolean)[0] || res.text.trim();
+                    try {
+                        if (field === 'title') document.getElementById('raTitle').value = suggestion;
+                        if (field === 'role') document.getElementById('raRole').value = suggestion;
+                        if (field === 'setting') document.getElementById('raSetting').value = suggestion;
+                        if (field === 'plot') document.getElementById('raPlot').value = suggestion;
+                        if (field === 'mood') document.getElementById('raMood').value = suggestion;
+                    } catch (e) { console.warn('Apply suggestion failed', e); }
+                } else {
+                    if (field === 'title') {
+                        const arr = suggestSamples.title;
+                        document.getElementById('raTitle').value = arr[Math.floor(Math.random()*arr.length)];
+                    } else {
+                        const fallback = field === 'mood' ? 'whimsical' : 'A small, friendly idea to spark the story.';
+                        try { document.getElementById(field === 'plot' ? 'raPlot' : (field === 'mood' ? 'raMood' : 'raSetting')).value = fallback; } catch(e){}
+                    }
+                }
+            }
+
+            document.getElementById('raSuggestSetting').onclick = () => suggestForField('setting');
+            document.getElementById('raSuggestPlot').onclick = () => suggestForField('plot');
+            document.getElementById('raSuggestMood').onclick = () => suggestForField('mood');
+
+            // Guided brainstorming: simple chat UI with multi-turn suggestions
+            document.getElementById('raBrainstorm').onclick = () => startGuidedBrainstorm();
+
+            function startGuidedBrainstorm() {
+                if (document.getElementById('raBrainModal')) return;
+
+                const modal = document.createElement('div');
+                modal.id = 'raBrainModal';
+                modal.style.position = 'fixed';
+                modal.style.top = '0';
+                modal.style.left = '0';
+                modal.style.width = '100vw';
+                modal.style.height = '100vh';
+                modal.style.background = 'rgba(0,0,0,0.6)';
+                modal.style.zIndex = '12000';
+                modal.style.display = 'flex';
+                modal.style.justifyContent = 'center';
+                modal.style.alignItems = 'center';
+
+                const box = document.createElement('div');
+                box.style.width = 'min(900px,94vw)';
+                box.style.maxHeight = '86vh';
+                box.style.overflow = 'hidden';
+                box.style.background = '#fff';
+                box.style.borderRadius = '12px';
+                box.style.boxSizing = 'border-box';
+                box.style.padding = '12px';
+
+                box.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <h3 style="margin:0;">Guided Story Brainstorm</h3>
+                        <button id="raBrainClose" style="background:#ef4444;color:#fff;border:none;padding:6px 10px;border-radius:8px;cursor:pointer;">Close</button>
+                    </div>
+                    <div id="raBrainContent" style="height:58vh;overflow:auto;padding:8px;border:1px solid #eee;border-radius:8px;background:#fafafa;"></div>
+                    <div style="display:flex;gap:8px;margin-top:8px;">
+                        <input id="raBrainInput" placeholder="Type your reply or ask the AI a question" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;" />
+                        <button id="raBrainSend" style="background:#2563eb;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">Send</button>
+                        <button id="raBrainAskAI" style="background:#10b981;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">Ask AI</button>
+                    </div>
+                `;
+
+                modal.appendChild(box);
+                document.body.appendChild(modal);
+
+                document.getElementById('raBrainClose').onclick = () => { modal.remove(); };
+
+                const content = document.getElementById('raBrainContent');
+
+                function appendMessage(who, text) {
+                    const d = document.createElement('div');
+                    d.style.marginBottom = '8px';
+                    d.innerHTML = `<div style="font-size:12px;color:#6b7280;margin-bottom:4px;">${who}</div><div style="background:${who==='AI'?'#eef2ff':'#fff'};padding:8px;border-radius:8px;border:1px solid #eee;">${escapeHtml(text)}</div>`;
+                    content.appendChild(d);
+                    content.scrollTop = content.scrollHeight;
+                }
+
+                const transcript = (document.getElementById('raTranscript')||{}).value || '';
+                const initialMsg = transcript.trim() ?
+                    `Let me help you brainstorm a story based on what you've been studying! What kind of adventure would Maximus like that incorporates the concepts from your transcript? (e.g. explore a forest, travel to space, build a robot)` :
+                    'Let me ask: What kind of adventure would Maximus like today? (e.g. explore a forest, travel to space, build a robot)';
+
+                appendMessage('AI', initialMsg);
+
+                document.getElementById('raBrainSend').onclick = () => {
+                    const val = (document.getElementById('raBrainInput')||{}).value || '';
+                    if (!val.trim()) return;
+                    appendMessage('You', val.trim());
+                    document.getElementById('raBrainInput').value = '';
+                };
+
+                document.getElementById('raBrainAskAI').onclick = async () => {
+                    const q = (document.getElementById('raBrainInput')||{}).value || '';
+                    const lastUser = q.trim() || 'Please suggest a fun story starter or a follow-up question to help build the story.';
+                    appendMessage('You', lastUser);
+
+                    const current = {
+                        title: (document.getElementById('raTitle')||{}).value || '',
+                        role: (document.getElementById('raRole')||{}).value || '',
+                        setting: (document.getElementById('raSetting')||{}).value || '',
+                        plot: (document.getElementById('raPlot')||{}).value || '',
+                        mood: (document.getElementById('raMood')||{}).value || '',
+                        transcript: (document.getElementById('raTranscript')||{}).value || ''
+                    };
+
+                    const prompt = `You are a creative brainstorming assistant for short children's stories. Use the details below to respond helpfully and positively. IMPORTANT: Pay special attention to the transcript/notes and suggest story ideas that incorporate and build upon the key concepts, themes, and educational content from the material studied.
+
+Details:
+Title: ${current.title}
+Role: ${current.role}
+Setting: ${current.setting}
+Mood: ${current.mood}
+Transcript/Notes: ${current.transcript.slice(0,600)}
+
+User message: ${lastUser}
+
+Respond in one or two short sentences or ask a single follow-up question to continue brainstorming. When suggesting story elements, try to weave in concepts from the transcript where appropriate.`;
+
+                    appendMessage('AI', 'Thinking...');
+                    try {
+                        const res = await generateStoryViaProviders(prompt);
+                        const aiText = (res && res.success && res.text) ? res.text.trim() : 'I have a fun idea: what if Maximus finds a tiny glowing map that only he can read?';
+                        content.lastChild.remove();
+                        appendMessage('AI', aiText);
+                    } catch (e) {
+                        content.lastChild.remove();
+                        appendMessage('AI', 'Hmm, I had trouble connecting to the AI — try again or use the sample idea: explore a friendly robot garden.');
+                    }
+                    document.getElementById('raBrainInput').value = '';
+                };
+            }
 
             document.getElementById('raGenerate').onclick = async () => {
                 const title = document.getElementById('raTitle').value.trim() || 'An Adventure for Maximus';
                 const role = document.getElementById('raRole').value;
+                const setting = document.getElementById('raSetting').value || '';
+                const plot = document.getElementById('raPlot').value || '';
+                const mood = document.getElementById('raMood').value || '';
                 const transcript = document.getElementById('raTranscript').value.trim();
 
                 // Show loading
@@ -105,7 +285,7 @@
                 outDiv.style.display = 'block';
 
                 // Build story prompt
-                const storyPrompt = buildStoryPrompt({ title, role, transcript });
+                const storyPrompt = buildStoryPrompt({ title, role, setting, plot, mood, transcript });
 
                 // Try providers in order: Gemini -> OpenAI -> Claude
                 const storyResult = await generateStoryViaProviders(storyPrompt);
@@ -115,15 +295,27 @@
                     paragraphs = storyResult.text.split(/\n\n+/).filter(Boolean);
                     if (paragraphs.length === 0) paragraphs = [storyResult.text];
                 } else {
-                    // Fallback local text if all providers fail
+                    // Fallback local text if all providers fail - try to incorporate transcript details
                     await new Promise(r => setTimeout(r, 300));
-                    const base = transcript ? `Based on: "${transcript.slice(0,120)}${transcript.length>120?'...':''}"` : '';
-                    paragraphs = [
-                        `Once upon a time, ${role} Maximus set out on an adventure. ${base}`,
-                        `He found a curious friend who helped him learn a new trick and solve a tiny mystery.`,
-                        `Together they faced a silly challenge and used clever thinking to keep going.`,
-                        `At the end, Maximus learned something important and celebrated with a big smile.`
-                    ];
+                    if (transcript && transcript.trim()) {
+                        // Extract key words/concepts from transcript for fallback story
+                        const words = transcript.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+                        const keyConcepts = words.slice(0, 5).join(', '); // Get first 5 meaningful words
+
+                        paragraphs = [
+                            `Once upon a time, ${role} Maximus was learning about ${keyConcepts || 'amazing things'}. He remembered what he had studied and wanted to explore more.`,
+                            `As Maximus went on his adventure, he thought about the important ideas from his studies, like ${keyConcepts || 'curious discoveries'}.`,
+                            `He met a friendly character who helped him understand these concepts better and solve a fun challenge.`,
+                            `At the end, Maximus felt proud of what he had learned and knew he could use this knowledge in exciting ways.`
+                        ];
+                    } else {
+                        paragraphs = [
+                            `Once upon a time, ${role} Maximus set out on an adventure.`,
+                            `He found a curious friend who helped him learn a new trick and solve a tiny mystery.`,
+                            `Together they faced a silly challenge and used clever thinking to keep going.`,
+                            `At the end, Maximus learned something important and celebrated with a big smile.`
+                        ];
+                    }
                 }
 
                 // Render as simple pages with play buttons (TTS hook)
@@ -159,10 +351,16 @@
             };
 
             // Build a friendly prompt for story generation
-            function buildStoryPrompt({ title, role, transcript }) {
+            function buildStoryPrompt({ title, role, setting, plot, mood, transcript }) {
                 let ctx = '';
-                if (transcript) ctx = `Here is the transcript or notes:\n${transcript}\n\n`;
-                const prompt = `Write a short children's story for a young child. Title: ${title}. Main character: ${role} (named Maximus). ${ctx}Make the language simple, friendly, and age-appropriate. Keep it to 4-8 short paragraphs. Each paragraph should be 1-3 short sentences. End with a clear lesson or positive takeaway for the child.`;
+                if (transcript) {
+                    ctx = `Here is the transcript or notes from the study material:\n${transcript}\n\nIMPORTANT: Carefully analyze this transcript and incorporate its key concepts, themes, specific details, and educational content into the story. Weave these elements naturally into the narrative so the story reinforces and builds upon what was learned. Reference specific ideas, facts, or concepts from the transcript where appropriate.`;
+                }
+                const prompt = `Write a short children's story for a young child. Title: ${title}. Main character: ${role} (named Maximus). Setting: ${setting}. Mood: ${mood}. Challenge/plot twist: ${plot}. ${ctx}
+
+Make the language simple, friendly, and age-appropriate. Keep it to 4-8 short paragraphs. Each paragraph should be 1-3 short sentences. End with a clear lesson or positive takeaway for the child.
+
+${transcript ? 'Ensure the story incorporates and reinforces the key concepts and details from the provided transcript, making the learning experience engaging and memorable.' : ''}`;
                 return prompt;
             }
 
