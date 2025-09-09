@@ -1477,7 +1477,45 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 return;
             }
             stopSpeech();
-            const utter = new SpeechSynthesisUtterance(String(text));
+
+            // Comprehensive text preprocessing to remove punctuation that TTS reads aloud
+            let processedText = String(text);
+            console.log('Original text:', text);
+
+            // Remove punctuation that TTS reads aloud as words/symbols, but keep grammar punctuation
+            processedText = processedText.replace(/[#$%&()*+\-;<=>@[\\\]^_`{|}~]/g, ' ');
+
+            // Handle special characters and symbols that TTS might mispronounce
+            processedText = processedText.replace(/[""]/g, '');  // Double quotes
+            // Keep apostrophes for contractions like "Let's", "That's", etc.
+            processedText = processedText.replace(/—/g, ' ');     // Em dash
+            processedText = processedText.replace(/–/g, ' ');     // En dash
+            processedText = processedText.replace(/…/g, ' ');     // Ellipsis
+            processedText = processedText.replace(/•/g, ' ');     // Bullet points
+            processedText = processedText.replace(/\|/g, ' ');    // Pipe
+            processedText = processedText.replace(/\//g, ' ');    // Forward slash
+            processedText = processedText.replace(/\\/g, ' ');    // Backslash
+            processedText = processedText.replace(/\[/g, ' ');    // Left bracket
+            processedText = processedText.replace(/\]/g, ' ');    // Right bracket
+            processedText = processedText.replace(/\{/g, ' ');    // Left brace
+            processedText = processedText.replace(/\}/g, ' ');    // Right brace
+            processedText = processedText.replace(/</g, ' ');     // Less than
+            processedText = processedText.replace(/>/g, ' ');     // Greater than
+            processedText = processedText.replace(/=/g, ' ');     // Equals
+            processedText = processedText.replace(/\+/g, ' ');    // Plus
+            processedText = processedText.replace(/\*/g, ' ');    // Asterisk
+            processedText = processedText.replace(/&/g, ' and '); // Ampersand
+            processedText = processedText.replace(/@/g, ' at ');  // At symbol
+            processedText = processedText.replace(/#/g, ' ');     // Hash
+            processedText = processedText.replace(/%/g, ' percent '); // Percent
+            processedText = processedText.replace(/\$/g, ' dollars '); // Dollar sign
+
+            // Handle multiple spaces and clean up
+            processedText = processedText.replace(/\s+/g, ' ').trim();
+
+            console.log('Processed text:', processedText);
+
+            const utter = new SpeechSynthesisUtterance(processedText);
 
             // if no opts provided, try to read from UI controls or saved settings
             if (!opts) {
@@ -1520,18 +1558,56 @@ Make sure each flashcard tests something specific from the transcript content.`;
             if (!front && !back) return;
             if (!('speechSynthesis' in window)) { alert('TTS not supported in this browser'); return; }
             stopSpeech();
-            const first = new SpeechSynthesisUtterance(String(front || ''));
+
+            // Comprehensive text preprocessing for front text (keep apostrophes for contractions)
+            let processedFront = String(front || '');
+            processedFront = processedFront.replace(/[#$%&()*+\-;<=>@[\\\]^_`{|}~]/g, ' ');
+            processedFront = processedFront.replace(/[""]/g, '');
+            // Keep apostrophes for contractions like "Let's", "That's", etc.
+            processedFront = processedFront.replace(/—/g, ' ').replace(/–/g, ' ');
+            processedFront = processedFront.replace(/…/g, ' ');
+            processedFront = processedFront.replace(/•/g, ' ');
+            processedFront = processedFront.replace(/;/g, ' ').replace(/:/g, ' ');
+            processedFront = processedFront.replace(/\(/g, ' ').replace(/\)/g, ' ');
+            processedFront = processedFront.replace(/\[/g, ' ').replace(/\]/g, ' ');
+            processedFront = processedFront.replace(/\{/g, ' ').replace(/\}/g, ' ');
+            processedFront = processedFront.replace(/&/g, ' and ').replace(/%/g, ' percent ').replace(/\$/g, ' dollars ');
+            processedFront = processedFront.replace(/\s+/g, ' ').trim();
+
+            const first = new SpeechSynthesisUtterance(processedFront);
             first.rate = 1;
             first.pitch = 1;
             first.lang = navigator.language || 'en-US';
             first.onend = function() {
                 if (back && back.trim()) {
-                    const second = new SpeechSynthesisUtterance(String(back));
+                    let processedBack = String(back);
+                    processedBack = processedBack.replace(/[#$%&()*+\-;<=>@[\\\]^_`{|}~]/g, ' ');
+                    processedBack = processedBack.replace(/[""]/g, '');
+                    // Keep apostrophes for contractions like "Let's", "That's", etc.
+                    processedBack = processedBack.replace(/—/g, ' ').replace(/–/g, ' ');
+                    processedBack = processedBack.replace(/…/g, ' ');
+                    processedBack = processedBack.replace(/•/g, ' ');
+                    processedBack = processedBack.replace(/;/g, ' ').replace(/:/g, ' ');
+                    processedBack = processedBack.replace(/\(/g, ' ').replace(/\)/g, ' ');
+                    processedBack = processedBack.replace(/\[/g, ' ').replace(/\]/g, ' ');
+                    processedBack = processedBack.replace(/\{/g, ' ').replace(/\}/g, ' ');
+                    processedBack = processedBack.replace(/&/g, ' and ').replace(/%/g, ' percent ').replace(/\$/g, ' dollars ');
+                    processedBack = processedBack.replace(/\s+/g, ' ').trim();
+
+                    const second = new SpeechSynthesisUtterance(processedBack);
                     second.rate = 1; second.pitch = 1; second.lang = navigator.language || 'en-US';
                     window.speechSynthesis.speak(second);
                 }
             };
             window.speechSynthesis.speak(first);
+        }
+
+        // Function to speak feedback text from button click
+        function speakFeedbackText(buttonElement) {
+            const feedbackText = buttonElement.getAttribute('data-feedback-text');
+            if (feedbackText) {
+                speakTextWithOptions(feedbackText, {rate: 0.9, pitch: 1.0});
+            }
         }
 
         // Play only front or only back
@@ -2487,9 +2563,24 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             <div class="bg-gradient-to-r from-purple-50 to-blue-50 border-l-4 border-purple-400 p-3 rounded">
                                 <div class="flex items-start">
                                     <div class="text-2xl mr-3">🤖</div>
-                                    <div>
-                                        <div class="font-semibold text-purple-800 mb-1">Coach:</div>
-                                        <div class="text-purple-700 text-sm">${escapeHtml(feedback)}</div>
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-purple-800 mb-1 flex items-center justify-between">
+                                            <span>Coach:</span>
+                                            <div class="flex gap-2">
+                                                <button onclick="speakFeedbackText(this)" 
+                                                        data-feedback-text="${feedback.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"
+                                                        class="bg-purple-500 hover:bg-purple-600 text-white text-xs px-2 py-1 rounded flex items-center transition-colors duration-200">
+                                                    <span class="mr-1">🔊</span>
+                                                    <span>Listen</span>
+                                                </button>
+                                                <button onclick="stopSpeech()" 
+                                                        class="bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded flex items-center transition-colors duration-200">
+                                                    <span class="mr-1">⏹️</span>
+                                                    <span>Stop</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="text-purple-700 text-sm">${feedback.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
                                     </div>
                                 </div>
                             </div>
@@ -2525,9 +2616,24 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     <div class="bg-gradient-to-r from-green-50 to-blue-50 border-l-4 border-green-400 p-3 rounded">
                         <div class="flex items-start">
                             <div class="text-2xl mr-3">🌟</div>
-                            <div>
-                                <div class="font-semibold text-green-800 mb-1">Coach:</div>
-                                <div class="text-green-700 text-sm">${escapeHtml(combined)}</div>
+                            <div class="flex-1">
+                                <div class="font-semibold text-green-800 mb-1 flex items-center justify-between">
+                                    <span>Coach:</span>
+                                    <div class="flex gap-2">
+                                        <button onclick="speakFeedbackText(this)" 
+                                                data-feedback-text="${combined.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"
+                                                class="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded flex items-center transition-colors duration-200">
+                                            <span class="mr-1">🔊</span>
+                                            <span>Listen</span>
+                                        </button>
+                                        <button onclick="stopSpeech()" 
+                                                class="bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded flex items-center transition-colors duration-200">
+                                            <span class="mr-1">⏹️</span>
+                                            <span>Stop</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="text-green-700 text-sm">${combined.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
                             </div>
                         </div>
                     </div>
@@ -2546,9 +2652,24 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 <div class="bg-gradient-to-r from-green-50 to-blue-50 border-l-4 border-green-400 p-3 rounded">
                     <div class="flex items-start">
                         <div class="text-2xl mr-3">🌟</div>
-                        <div>
-                            <div class="font-semibold text-green-800 mb-1">Coach:</div>
-                            <div class="text-green-700 text-sm">${escapeHtml(combined)}</div>
+                        <div class="flex-1">
+                            <div class="font-semibold text-green-800 mb-1 flex items-center justify-between">
+                                <span>Coach:</span>
+                                <div class="flex gap-2">
+                                    <button onclick="speakFeedbackText(this)" 
+                                            data-feedback-text="${combined.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"
+                                            class="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded flex items-center transition-colors duration-200">
+                                        <span class="mr-1">🔊</span>
+                                        <span>Listen</span>
+                                    </button>
+                                    <button onclick="stopSpeech()" 
+                                            class="bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded flex items-center transition-colors duration-200">
+                                        <span class="mr-1">⏹️</span>
+                                        <span>Stop</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="text-green-700 text-sm">${combined.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
                         </div>
                     </div>
                 </div>
@@ -3288,7 +3409,20 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 // wait briefly for voices to appear
                 const voices = await ensureVoicesLoaded(2000);
                 // create a near-silent utterance to prime audio and voices
-                const sampleText = 'Initializing voice features.';
+                let sampleText = 'Initializing voice features.';
+                sampleText = sampleText.replace(/[#$%&()*+\-;<=>@[\\\]^_`{|}~]/g, ' ');
+                sampleText = sampleText.replace(/[""]/g, '');
+                // Keep apostrophes for contractions like "Let's", "That's", etc.
+                sampleText = sampleText.replace(/—/g, ' ').replace(/–/g, ' ');
+                sampleText = sampleText.replace(/…/g, ' ');
+                sampleText = sampleText.replace(/•/g, ' ');
+                sampleText = sampleText.replace(/;/g, ' ').replace(/:/g, ' ');
+                sampleText = sampleText.replace(/\(/g, ' ').replace(/\)/g, ' ');
+                sampleText = sampleText.replace(/\[/g, ' ').replace(/\]/g, ' ');
+                sampleText = sampleText.replace(/\{/g, ' ').replace(/\}/g, ' ');
+                sampleText = sampleText.replace(/&/g, ' and ').replace(/%/g, ' percent ').replace(/\$/g, ' dollars ');
+                sampleText = sampleText.replace(/\s+/g, ' ').trim();
+
                 const u = new SpeechSynthesisUtterance(sampleText);
                 u.rate = 1; u.pitch = 1; u.lang = navigator.language || 'en-US';
                 try { u.volume = 0.02; } catch (e) { /* volume may be unsupported */ }
@@ -3870,7 +4004,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const minGap = gapMap[difficulty] || 4;
             const cardToReinsert = studyQueue[currentCardIndex];
 
-            if (difficulty === 'hard' || difficulty === 'medium') {
+            if (difficulty === 'hard') {
                 // find a reinsertion index at least minGap ahead where neighboring category differs
                 const original = studyQueue[currentCardIndex];
                 let insertIdx = Math.min(currentCardIndex + minGap, studyQueue.length);
