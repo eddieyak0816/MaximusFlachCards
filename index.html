@@ -4290,6 +4290,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     alert('No flashcards found. Create some by studying a video!');
                     return;
                 }
+                // Sorting state: column and direction
+                if (!window._allCardsSort) {
+                    window._allCardsSort = { col: 'nextReview', dir: 'asc' };
+                }
                 let modal = document.getElementById('flashcardModal');
                     if (!modal) {
                     modal = document.createElement('div');
@@ -4319,6 +4323,51 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const catList = evt.target.result || [];
 
                     // Build table with bulk controls and filters arranged on two rows
+
+                // Helper for sort indicator (move to global scope for header HTML)
+                window._sortIndicator = function(col) {
+                    if (!window._allCardsSort || window._allCardsSort.col !== col) return '';
+                    return window._allCardsSort.dir === 'asc' ? ' ▲' : ' ▼';
+                };
+
+                    // Sort allCards before rendering
+                    const sortCol = window._allCardsSort.col;
+                    const sortDir = window._allCardsSort.dir;
+                    allCards.sort((a, b) => {
+                        let vA, vB;
+                        switch (sortCol) {
+                            case 'category':
+                                vA = (a.categoryId === undefined || a.categoryId === null || a.categoryId === '') ? '' : (catList.find(c => String(c.id) === String(a.categoryId))?.name || '');
+                                vB = (b.categoryId === undefined || b.categoryId === null || b.categoryId === '') ? '' : (catList.find(c => String(c.id) === String(b.categoryId))?.name || '');
+                                break;
+                            case 'front':
+                                vA = a.front || '';
+                                vB = b.front || '';
+                                break;
+                            case 'back':
+                                vA = a.back || '';
+                                vB = b.back || '';
+                                break;
+                            case 'nextReview':
+                                vA = a.nextReview ? new Date(a.nextReview).getTime() : 0;
+                                vB = b.nextReview ? new Date(b.nextReview).getTime() : 0;
+                                break;
+                            case 'timesStudied':
+                                vA = a.timesStudied || 0;
+                                vB = b.timesStudied || 0;
+                                break;
+                            default:
+                                vA = '';
+                                vB = '';
+                        }
+                        if (typeof vA === 'string' && typeof vB === 'string') {
+                            const cmp = vA.localeCompare(vB);
+                            return sortDir === 'asc' ? cmp : -cmp;
+                        } else {
+                            return sortDir === 'asc' ? vA - vB : vB - vA;
+                        }
+                    });
+
                     let tableHtml = `<div style='display:flex;flex-direction:column;gap:8px;justify-content:space-between;align-items:stretch;margin-bottom:8px;'>
                         <div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap;'>
                             <button onclick="bulkDeleteSelected()" style='background:#e53e3e;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-right:6px;height:30px;'>Delete Selected</button>
@@ -4353,16 +4402,29 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 <table style='width:100%;border-collapse:collapse;'>
                     <thead>
                         <tr style='background:#f3f3f3;'>
-                                <th style='padding:8px;border:1px solid #ddd;width:36px;text-align:center;'><input type='checkbox' id='masterSelect' onchange='toggleMasterSelect(this)'/></th>
-                            <th style='padding:8px;border:1px solid #ddd;'>Category</th>
-                            <th style='padding:8px;border:1px solid #ddd;width:35%;'>Front</th>
-                            <th style='padding:8px;border:1px solid #ddd;width:35%;'>Back</th>
-                            <th style='padding:8px;border:1px solid #ddd;'>Next Review</th>
-                            <th style='padding:8px;border:1px solid #ddd;width:80px;text-align:center;'>Times Studied</th>
+                            <th style='padding:8px;border:1px solid #ddd;width:36px;text-align:center;'><input type='checkbox' id='masterSelect' onchange='toggleMasterSelect(this)'/></th>
+                            <th style='padding:8px;border:1px solid #ddd;cursor:pointer;' onclick='window.sortAllCardsTable && window.sortAllCardsTable("category")'>Category<span>${window._sortIndicator ? window._sortIndicator('category') : ''}</span></th>
+                            <th style='padding:8px;border:1px solid #ddd;width:35%;cursor:pointer;' onclick='window.sortAllCardsTable && window.sortAllCardsTable("front")'>Front<span>${window._sortIndicator ? window._sortIndicator('front') : ''}</span></th>
+                            <th style='padding:8px;border:1px solid #ddd;width:35%;cursor:pointer;' onclick='window.sortAllCardsTable && window.sortAllCardsTable("back")'>Back<span>${window._sortIndicator ? window._sortIndicator('back') : ''}</span></th>
+                            <th style='padding:8px;border:1px solid #ddd;cursor:pointer;' onclick='window.sortAllCardsTable && window.sortAllCardsTable("nextReview")'>Next Review<span>${window._sortIndicator ? window._sortIndicator('nextReview') : ''}</span></th>
+                            <th style='padding:8px;border:1px solid #ddd;width:80px;text-align:center;cursor:pointer;' onclick='window.sortAllCardsTable && window.sortAllCardsTable("timesStudied")'>Times Studied<span>${window._sortIndicator ? window._sortIndicator('timesStudied') : ''}</span></th>
                             <th style='padding:8px;border:1px solid #ddd;width:80px;text-align:center;'>Actions</th>
                         </tr>
                     </thead>
                     <tbody>`;
+// Add global sort handler for All Flashcards table
+window.sortAllCardsTable = function(col) {
+    if (!window._allCardsSort) window._allCardsSort = { col: col, dir: 'asc' };
+    if (window._allCardsSort.col === col) {
+        // Toggle direction
+        window._allCardsSort.dir = window._allCardsSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        window._allCardsSort.col = col;
+        window._allCardsSort.dir = 'asc';
+    }
+    // Re-render
+    showAllCards();
+};
                     // Populate bulk select options
                     const bulkOptions = catList.map(c => `<option value='${c.id}'>${c.name}</option>`).join('');
 
