@@ -3999,9 +3999,51 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const cardId = currentCardIndex;
             cardDifficulties[cardId] = difficulty;
             
-            // If this is a database flashcard, update it
+            // Get the current card from study queue
             const currentCard = studyQueue[currentCardIndex];
+            
             if (currentCard && currentCard.id) {
+                // Calculate new review data immediately for instant UI feedback
+                const reviewData = calculateNextReview(
+                    difficulty,
+                    currentCard.interval || 1,
+                    currentCard.easeFactor || 2.5,
+                    currentCard.repetitions || 0
+                );
+                
+                // Check for category pacing preset
+                const catId = (currentCard.categoryId === undefined || currentCard.categoryId === null || currentCard.categoryId === '') ? '' : currentCard.categoryId;
+                let finalInterval = reviewData.interval;
+                
+                if (catId !== '' && db) {
+                    // Get category preset synchronously if possible
+                    try {
+                        const cTx = db.transaction(['categories'], 'readonly');
+                        const cStore = cTx.objectStore('categories');
+                        const catReq = cStore.get(Number(catId));
+                        catReq.onsuccess = function(evt) {
+                            const cat = evt.target.result || {};
+                            const preset = cat && cat.pacingPreset ? getPresetById(cat.pacingPreset) : null;
+                            if (preset && preset.intervalMultiplier) {
+                                finalInterval = Number(finalInterval) * Number(preset.intervalMultiplier);
+                            }
+                            // Update with final interval
+                            updateCardWithFinalInterval(currentCard, reviewData, finalInterval, difficulty);
+                        };
+                        catReq.onerror = function() {
+                            // Use default interval
+                            updateCardWithFinalInterval(currentCard, reviewData, finalInterval, difficulty);
+                        };
+                    } catch (e) {
+                        // Use default interval
+                        updateCardWithFinalInterval(currentCard, reviewData, finalInterval, difficulty);
+                    }
+                } else {
+                    // No category, use default interval
+                    updateCardWithFinalInterval(currentCard, reviewData, finalInterval, difficulty);
+                }
+                
+                // Update database asynchronously
                 updateFlashcardAfterStudy(currentCard.id, difficulty);
             }
             
@@ -4040,6 +4082,23 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
             currentCardIndex++;
             showCurrentCard();
+        }
+
+        // Helper function to update card with final calculated interval
+        function updateCardWithFinalInterval(card, reviewData, finalInterval, difficulty) {
+            const nextReview = new Date();
+            nextReview.setTime(nextReview.getTime() + finalInterval * 24 * 60 * 60 * 1000);
+            
+            // Update in-memory card immediately
+            card.nextReview = nextReview.toISOString();
+            card.interval = finalInterval;
+            card.easeFactor = reviewData.easeFactor;
+            card.repetitions = reviewData.repetitions;
+            card.timesStudied = (card.timesStudied || 0) + 1;
+            card.lastDifficulty = difficulty;
+            card.lastStudied = new Date().toISOString();
+            
+            console.log(`Card updated: ${difficulty} -> interval: ${finalInterval} days, next review: ${nextReview.toISOString()}`);
         }
 
         function showStudyComplete() {
@@ -5325,7 +5384,10 @@ window.sortAllCardsTable = function(col) {
 
         // Update flashcard after study session
         function updateFlashcardAfterStudy(flashcardId, difficulty) {
-            if (!db) return;
+            if (!db) {
+                console.warn('Database not available for flashcard update');
+                return;
+            }
             
             const transaction = db.transaction(['flashcards'], 'readwrite');
             const store = transaction.objectStore('flashcards');
@@ -5334,82 +5396,39 @@ window.sortAllCardsTable = function(col) {
             
             request.onsuccess = function() {
                 const flashcard = request.result;
-                if (flashcard) {
-                    const reviewData = calculateNextReview(
-                        difficulty,
-                        flashcard.interval,
-                        flashcard.easeFactor,
-                        flashcard.repetitions || 0
-                    );
-
-                    // Determine if this card's category has a pacing preset; if so, apply intervalMultiplier
-                    const catId = (flashcard.categoryId === undefined || flashcard.categoryId === null) ? '' : flashcard.categoryId;
-                    if (catId !== '' && db) {
-                        try {
-                            const cTx = db.transaction(['categories'], 'readonly');
-                            const cStore = cTx.objectStore('categories');
-                            const catReq = cStore.get(Number(catId));
-                            catReq.onsuccess = function(evt) {
-                                const cat = evt.target.result || {};
-                                const preset = cat && cat.pacingPreset ? getPresetById(cat.pacingPreset) : null;
-                                let finalInterval = reviewData.interval;
-                                if (preset && preset.intervalMultiplier) {
-                                    finalInterval = Number(finalInterval) * Number(preset.intervalMultiplier);
-                                }
-
-                                // compute nextReview based on finalInterval (days)
-                                const next = new Date();
-                                next.setTime(next.getTime() + finalInterval * 24 * 60 * 60 * 1000);
-
-                                flashcard.nextReview = next.toISOString();
-                                flashcard.interval = finalInterval;
-                                flashcard.easeFactor = reviewData.easeFactor;
-                                flashcard.repetitions = reviewData.repetitions;
-                                flashcard.timesStudied = (flashcard.timesStudied || 0) + 1;
-                                flashcard.lastDifficulty = difficulty;
-                                flashcard.lastStudied = new Date().toISOString();
-
-                                store.put(flashcard);
-                                // Also record the study session
-                                recordStudySession(flashcardId, difficulty);
-                            };
-                            catReq.onerror = function() {
-                                // fallback to default reviewData
-                                flashcard.nextReview = reviewData.nextReview;
-                                flashcard.interval = reviewData.interval;
-                                flashcard.easeFactor = reviewData.easeFactor;
-                                flashcard.repetitions = reviewData.repetitions;
-                                flashcard.timesStudied = (flashcard.timesStudied || 0) + 1;
-                                flashcard.lastDifficulty = difficulty;
-                                flashcard.lastStudied = new Date().toISOString();
-                                store.put(flashcard);
-                                recordStudySession(flashcardId, difficulty);
-                            };
-                        } catch (e) {
-                            // any error: fallback
-                            flashcard.nextReview = reviewData.nextReview;
-                            flashcard.interval = reviewData.interval;
-                            flashcard.easeFactor = reviewData.easeFactor;
-                            flashcard.repetitions = reviewData.repetitions;
-                            flashcard.timesStudied = (flashcard.timesStudied || 0) + 1;
-                            flashcard.lastDifficulty = difficulty;
-                            flashcard.lastStudied = new Date().toISOString();
-                            store.put(flashcard);
-                            recordStudySession(flashcardId, difficulty);
-                        }
-                    } else {
-                        // No category or DB not available — use computed reviewData directly
-                        flashcard.nextReview = reviewData.nextReview;
-                        flashcard.interval = reviewData.interval;
-                        flashcard.easeFactor = reviewData.easeFactor;
-                        flashcard.repetitions = reviewData.repetitions;
-                        flashcard.timesStudied = (flashcard.timesStudied || 0) + 1;
-                        flashcard.lastDifficulty = difficulty;
-                        flashcard.lastStudied = new Date().toISOString();
-                        store.put(flashcard);
-                        recordStudySession(flashcardId, difficulty);
-                    }
+                if (!flashcard) {
+                    console.error('Flashcard not found for update:', flashcardId);
+                    return;
                 }
+                
+                // Get current values from the in-memory card (already updated)
+                const currentCard = studyQueue.find(c => c.id === flashcardId);
+                if (currentCard) {
+                    // Copy the updated values from memory to database
+                    flashcard.nextReview = currentCard.nextReview;
+                    flashcard.interval = currentCard.interval;
+                    flashcard.easeFactor = currentCard.easeFactor;
+                    flashcard.repetitions = currentCard.repetitions;
+                    flashcard.timesStudied = currentCard.timesStudied;
+                    flashcard.lastDifficulty = currentCard.lastDifficulty;
+                    flashcard.lastStudied = currentCard.lastStudied;
+                    
+                    // Save to database
+                    const putRequest = store.put(flashcard);
+                    putRequest.onsuccess = function() {
+                        console.log('Flashcard updated in database:', flashcardId, difficulty);
+                        recordStudySession(flashcardId, difficulty);
+                    };
+                    putRequest.onerror = function() {
+                        console.error('Failed to update flashcard in database:', flashcardId);
+                    };
+                } else {
+                    console.error('Current card not found in study queue for database update');
+                }
+            };
+            
+            request.onerror = function() {
+                console.error('Failed to retrieve flashcard for update:', flashcardId);
             };
         }
 
