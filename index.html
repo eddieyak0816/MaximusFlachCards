@@ -3034,7 +3034,74 @@ Make sure each flashcard tests something specific from the transcript content.`;
             document.getElementById('currentCard').textContent = currentCardIndex + 1;
             
             const container = document.getElementById('flashcardContainer');
-            container.innerHTML = `
+            if (card.type === 'cloze' && card.clozeText) {
+                // Render cloze text with blanks
+                let clozeHtml = card.clozeText;
+                // Find all {{...}} and replace with input boxes
+                const blanks = [];
+                clozeHtml = clozeHtml.replace(/\{\{(.*?)\}\}/g, function(_, ans, idx) {
+                    blanks.push(ans.trim());
+                    // Make input at least 120px or as wide as answer text (20px per char)
+                    return `<input type="text" class="cloze-blank border-b-2 border-blue-400 mx-1 px-2 py-1 text-center" data-blank-idx="${blanks.length-1}" style="min-width:120px;width:${Math.max(120, ans.length*20)}px" autocomplete="off">`;
+                });
+                container.innerHTML = `
+                    <div class="bg-white border-2 border-gray-200 rounded-xl p-8 text-center min-h-64 flex flex-col justify-center shadow-lg">
+                        <div id="cardContent">
+                            <div id="cardFront" class="card-side">
+                                <div class="text-lg font-semibold text-gray-800 mb-4">Fill in the blank(s):</div>
+                                <div class="mb-4 text-lg">${clozeHtml}</div>
+                                <div class="mb-3">
+                                    <button id="checkClozeAnswer" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">Check Answer</button>
+                                </div>
+                                <div id="clozeFeedback" class="mt-2 text-base"></div>
+                                <div id="clozeRatingBtns" class="flex justify-center space-x-6 mt-6" style="display:none">
+                                    <div class="flex flex-col items-center">
+                                        <button onclick="rateCard('hard')" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">😰 Hard <span class="ml-2 text-xs">${getProjectedLabel(card,'hard')}</span></button>
+                                        <div class="text-xs text-gray-500 mt-1">(1)</div>
+                                    </div>
+                                    <div class="flex flex-col items-center">
+                                        <button onclick="rateCard('medium')" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm">🤔 Medium <span class="ml-2 text-xs">${getProjectedLabel(card,'medium')}</span></button>
+                                        <div class="text-xs text-gray-500 mt-1">(2)</div>
+                                    </div>
+                                    <div class="flex flex-col items-center">
+                                        <button onclick="rateCard('easy')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm">😊 Easy <span class="ml-2 text-xs">${getProjectedLabel(card,'easy')}</span></button>
+                                        <div class="text-xs text-gray-500 mt-1">(3)</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                // Add answer checking logic
+                document.getElementById('checkClozeAnswer').onclick = function() {
+                    const inputs = container.querySelectorAll('.cloze-blank');
+                    let correct = 0;
+                    let total = blanks.length;
+                    let feedback = '';
+                    inputs.forEach((inp, i) => {
+                        const userAns = inp.value.trim();
+                        const correctAns = blanks[i];
+                        if (userAns.toLowerCase() === correctAns.toLowerCase()) {
+                            inp.style.background = '#bbf7d0'; // green
+                            correct++;
+                        } else {
+                            inp.style.background = '#fecaca'; // red
+                        }
+                    });
+                    if (correct === total) {
+                        feedback = `<span class='text-green-700 font-semibold'>✅ All correct!</span>`;
+                    } else {
+                        feedback = `<span class='text-red-700 font-semibold'>${correct} of ${total} correct. Answers: ${blanks.map(b=>`<b>${b}</b>`).join(', ')}</span>`;
+                    }
+                    document.getElementById('clozeFeedback').innerHTML = feedback;
+                    // Show rating buttons
+                    document.getElementById('clozeRatingBtns').style.display = '';
+                    // Optionally, disable check button after checking
+                    document.getElementById('checkClozeAnswer').disabled = true;
+                };
+            } else {
+                // ...existing code for basic cards...
+                container.innerHTML = `
                 <div class="bg-white border-2 border-gray-200 rounded-xl p-8 text-center min-h-64 flex flex-col justify-center shadow-lg">
                     <div id="cardContent">
                         <div id="cardFront" class="card-side">
@@ -3077,7 +3144,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         </div>
                     </div>
                 </div>
-            `;
+                `;
+            }
 
             // Wire the shared header category select to this card
             setTimeout(() => {
@@ -3788,8 +3856,22 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 <div style="background:white;max-width:720px;width:92vw;border-radius:12px;padding:20px;box-sizing:border-box;">
                     <h3 style="margin-top:0;margin-bottom:8px;font-size:1.2rem;">Create Flashcard</h3>
                     <div style="display:flex;flex-direction:column;gap:8px;">
-                        <label>Front (Question):<textarea id="createFront" style="width:100%;min-height:80px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea></label>
-                        <label>Back (Answer):<textarea id="createBack" style="width:100%;min-height:120px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea></label>
+                        <label>Card Type:
+                            <select id="createCardType" style="padding:6px;border-radius:6px;border:1px solid #ccc;">
+                                <option value="basic">Basic (Front/Back)</option>
+                                <option value="cloze">Cloze (Fill-in-the-blank)</option>
+                            </select>
+                        </label>
+                        <div id="basicFields">
+                            <label>Front (Question):<textarea id="createFront" style="width:100%;min-height:80px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea></label>
+                            <label>Back (Answer):<textarea id="createBack" style="width:100%;min-height:120px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea></label>
+                        </div>
+                        <div id="clozeFields" style="display:none;">
+                            <label>Cloze Text (use <code>{{answer}}</code> for blanks):
+                                <textarea id="createCloze" style="width:100%;min-height:100px;padding:8px;border:1px solid #ddd;border-radius:6px;" placeholder="e.g. The capital of France is {{Paris}}."></textarea>
+                            </label>
+                            <div class="text-xs text-gray-500" style="margin-top:-4px;">Use <code>{{word}}</code> for each blank. You can have multiple blanks.</div>
+                        </div>
                         <label>Category:<select id="createCategory" style="padding:6px;border-radius:6px;border:1px solid #ccc;">${catOptions}</select></label>
                         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
                             <button id="createCancel" style="background:#e2e8f0;padding:8px 12px;border-radius:6px;border:none;cursor:pointer;">Cancel</button>
@@ -3803,17 +3885,61 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
             document.getElementById('createCancel').onclick = function() { document.getElementById('createCardModal') && document.getElementById('createCardModal').remove(); };
             document.getElementById('createSave').onclick = saveCreatedCard;
-        }
+
+            // Toggle fields based on card type
+            document.getElementById('createCardType').onchange = function() {
+                const type = this.value;
+                document.getElementById('basicFields').style.display = (type === 'basic') ? '' : 'none';
+                document.getElementById('clozeFields').style.display = (type === 'cloze') ? '' : 'none';
+            };
+    }
 
         // Save created card into IndexedDB with sensible defaults and optional category preset
         function saveCreatedCard() {
-            let front = document.getElementById('createFront').value.trim();
-            let back = document.getElementById('createBack').value.trim();
-            // preserve emojis when saving
-            // front = stripEmojis(front);
-            // back = stripEmojis(back);
+            const type = document.getElementById('createCardType').value;
             const cat = document.getElementById('createCategory').value;
-            if (!front || !back) return alert('Please provide both front and back text for the card');
+            let data;
+            if (type === 'cloze') {
+                const clozeText = document.getElementById('createCloze').value.trim();
+                if (!clozeText || !clozeText.includes('{{') || !clozeText.includes('}}')) {
+                    return alert('Please provide cloze text with at least one {{blank}}.');
+                }
+                data = {
+                    type: 'cloze',
+                    clozeText,
+                    videoTitle: 'Manual Card',
+                    videoUrl: '',
+                    subject: '',
+                    categoryId: cat === '' ? '' : cat,
+                    createdAt: new Date().toISOString(),
+                    nextReview: new Date().toISOString(),
+                    interval: 1,
+                    easeFactor: 2.5,
+                    repetitions: 0,
+                    timesStudied: 0,
+                    lastDifficulty: null
+                };
+            } else {
+                let front = document.getElementById('createFront').value.trim();
+                let back = document.getElementById('createBack').value.trim();
+                if (!front || !back) return alert('Please provide both front and back text for the card');
+                data = {
+                    type: 'basic',
+                    front,
+                    back,
+                    videoTitle: 'Manual Card',
+                    videoUrl: '',
+                    subject: '',
+                    categoryId: cat === '' ? '' : cat,
+                    createdAt: new Date().toISOString(),
+                    nextReview: new Date().toISOString(),
+                    interval: 1,
+                    easeFactor: 2.5,
+                    repetitions: 0,
+                    timesStudied: 0,
+                    lastDifficulty: null
+                };
+            }
 
             if (!db) {
                 alert('Database not ready. Try again in a moment.');
@@ -3826,42 +3952,23 @@ Make sure each flashcard tests something specific from the transcript content.`;
             getReq.onsuccess = function(evt) {
                 const category = evt.target.result || {};
                 const preset = category && category.pacingPreset ? getPresetById(category.pacingPreset) : null;
-
+                if (preset) {
+                    data.interval = (preset.initialInterval) ? Number(preset.initialInterval) : 1;
+                    data.easeFactor = (preset.easeFactor) ? Number(preset.easeFactor) : 2.5;
+                }
                 const tx2 = db.transaction(['flashcards'], 'readwrite');
                 const store2 = tx2.objectStore('flashcards');
-                const data = {
-                    front,
-                    back,
-                    videoTitle: 'Manual Card',
-                    videoUrl: '',
-                    subject: '',
-                    categoryId: cat === '' ? '' : cat,
-                    createdAt: new Date().toISOString(),
-                    nextReview: new Date().toISOString(),
-                    interval: (preset && preset.initialInterval) ? Number(preset.initialInterval) : 1,
-                    easeFactor: (preset && preset.easeFactor) ? Number(preset.easeFactor) : 2.5,
-                    repetitions: 0,
-                    timesStudied: 0,
-                    lastDifficulty: null
-                };
-
                 const addReq = store2.add(data);
                 addReq.onsuccess = function() {
                     document.getElementById('createCardModal') && document.getElementById('createCardModal').remove();
-                    // Refresh UI
                     try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}
                     alert('Card created');
                 };
                 addReq.onerror = function(e) { alert('Error saving card: ' + e.target.error); };
             };
             getReq.onerror = function() {
-                // Save with defaults if category fetch fails
                 const tx2 = db.transaction(['flashcards'], 'readwrite');
                 const store2 = tx2.objectStore('flashcards');
-                const data = {
-                    front, back, videoTitle: 'Manual Card', videoUrl: '', subject: '', categoryId: cat === '' ? '' : cat,
-                    createdAt: new Date().toISOString(), nextReview: new Date().toISOString(), interval: 1, easeFactor: 2.5, repetitions: 0, timesStudied: 0
-                };
                 store2.add(data).onsuccess = function() { document.getElementById('createCardModal') && document.getElementById('createCardModal').remove(); try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}; alert('Card created'); };
             };
         }
