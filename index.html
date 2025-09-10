@@ -1297,11 +1297,16 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     } else {
                         interval = 2; // easy -> 2 days
                     }
-                } else if (newReps === 1) {
-                    interval = 6; // second successful recall -> 6 days
                 } else {
-                    // Slightly more conservative growth than standard SM-2
-                    interval = previousInterval * newEf * 0.9;
+                    // Use user-requested multipliers and round up
+                    if (difficulty === 'medium') {
+                        interval = Math.ceil(previousInterval * 1.25);
+                    } else if (difficulty === 'easy') {
+                        interval = Math.ceil(previousInterval * 1.5);
+                    } else {
+                        // fallback for hard or unknown: keep old logic
+                        interval = previousInterval * newEf * 0.9;
+                    }
                 }
                 newReps += 1;
             } else {
