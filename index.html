@@ -4294,6 +4294,49 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             preview.appendChild(img);
                         });
                     });
+                    // If editing an existing card that already has stored images, show those too and allow removal
+                    if (editing && editing.imageFiles && editing.imageFiles.length > 0) {
+                        try {
+                            window._editedImageFiles = (editing.imageFiles || []).slice();
+                            const preview = document.getElementById('imagePreview');
+                            const renderEditedImagePreview = () => {
+                                // preserve any thumbnails from uploaded change handler by appending
+                                // but for simplicity re-render full preview area
+                                preview.innerHTML = '';
+                                // first show stored images with remove buttons
+                                window._editedImageFiles.forEach((f, idx) => {
+                                    const wrapper = document.createElement('div');
+                                    wrapper.style.display = 'inline-flex';
+                                    wrapper.style.flexDirection = 'column';
+                                    wrapper.style.alignItems = 'center';
+                                    wrapper.style.marginRight = '8px';
+
+                                    const img = document.createElement('img');
+                                    img.src = f.data;
+                                    img.style.maxWidth = '80px';
+                                    img.style.maxHeight = '80px';
+                                    img.style.borderRadius = '6px';
+                                    img.style.border = '1px solid #ccc';
+                                    wrapper.appendChild(img);
+
+                                    const del = document.createElement('button');
+                                    del.textContent = 'Remove';
+                                    del.style.marginTop = '6px';
+                                    del.style.padding = '6px 8px';
+                                    del.style.background = '#ef4444';
+                                    del.style.color = 'white';
+                                    del.style.border = 'none';
+                                    del.style.borderRadius = '6px';
+                                    del.style.cursor = 'pointer';
+                                    del.onclick = () => { window._editedImageFiles.splice(idx,1); renderEditedImagePreview(); };
+                                    wrapper.appendChild(del);
+
+                                    preview.appendChild(wrapper);
+                                });
+                            };
+                            renderEditedImagePreview();
+                        } catch (e) { console.error('Could not render existing image files', e); }
+                    }
                 }
 
                 // AI Image generation
@@ -4358,7 +4401,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             }, 0);
             document.body.appendChild(modal);
 
-            document.getElementById('createCancel').onclick = function() { document.getElementById('createCardModal') && document.getElementById('createCardModal').remove(); };
+            document.getElementById('createCancel').onclick = function() { try { window._editedAudioFiles = []; window._pendingRecordedFiles = []; window._editedImageFiles = []; } catch(e){}; document.getElementById('createCardModal') && document.getElementById('createCardModal').remove(); };
             document.getElementById('createSave').onclick = saveCreatedCard;
 
             // Toggle fields based on card type
@@ -4431,7 +4474,15 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         audioFiles = [];
                     }
 
-                    if (imageFiles.length === 0 && editing.imageFiles) {
+                    // Merge edited stored images with newly uploaded ones (avoid duplicate filenames)
+                    if (window._editedImageFiles && Array.isArray(window._editedImageFiles)) {
+                        const existingNames = new Set(window._editedImageFiles.map(i=>i.name));
+                        // start with edited stored files
+                        imageFiles = window._editedImageFiles.slice();
+                        // append newly uploaded ones if not duplicates
+                        imageFilesNames = new Set(imageFiles.map(i=>i.name));
+                        (await Promise.all((imageInput && imageInput.files ? Array.from(imageInput.files) : []).map(fileToBase64))).forEach(nu => { if (!imageFilesNames.has(nu.name)) imageFiles.push(nu); });
+                    } else if (imageFiles.length === 0 && editing.imageFiles) {
                         imageFiles = editing.imageFiles;
                     }
                 } else {
@@ -4504,7 +4555,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}
                         alert('Card updated');
                         window._editCard = null;
-                        try { window._editedAudioFiles = []; window._pendingRecordedFiles = []; } catch(e){}
+                        try { window._editedAudioFiles = []; window._pendingRecordedFiles = []; window._editedImageFiles = []; } catch(e){}
                     };
                     putReq.onerror = function(e) { alert('Error updating card: ' + e.target.error); };
                 } else {
@@ -4526,14 +4577,14 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             document.getElementById('createCardModal') && document.getElementById('createCardModal').remove();
                             try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}
                             alert('Card created');
-                            try { window._editedAudioFiles = []; window._pendingRecordedFiles = []; } catch(e){}
+                            try { window._editedAudioFiles = []; window._pendingRecordedFiles = []; window._editedImageFiles = []; } catch(e){}
                         };
                         addReq.onerror = function(e) { alert('Error saving card: ' + e.target.error); };
                     };
                     getReq.onerror = function() {
                         const tx2 = db.transaction(['flashcards'], 'readwrite');
                         const store2 = tx2.objectStore('flashcards');
-                        store2.add(data).onsuccess = function() { document.getElementById('createCardModal') && document.getElementById('createCardModal').remove(); try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}; alert('Card created'); };
+                        store2.add(data).onsuccess = function() { document.getElementById('createCardModal') && document.getElementById('createCardModal').remove(); try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}; alert('Card created'); try { window._editedAudioFiles = []; window._pendingRecordedFiles = []; window._editedImageFiles = []; } catch(e){} };
                     };
                 }
             }
