@@ -3050,6 +3050,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             <div id="cardFront" class="card-side">
                                 <div class="text-lg font-semibold text-gray-800 mb-4">Fill in the blank(s):</div>
                                 <div class="mb-4 text-lg">${clozeHtml}</div>
+                                <button id="showHintBtn" class="bg-yellow-200 hover:bg-yellow-300 text-yellow-900 px-3 py-1 rounded text-sm mb-2" style="display:${card.sampleSentence && card.sampleSentence.trim() ? '' : 'none'}">💡 Show Hint</button>
+                                <div id="hintPopup" class="text-base text-gray-700 mb-2" style="display:none;"></div>
                                 <div id="clozeTriesMsg" class="text-xs text-gray-500 mb-2">Attempt 1 of 3</div>
                                 <div class="mb-3">
                                     <button id="checkClozeAnswer" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">Check Answer</button>
@@ -3074,6 +3076,16 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         </div>
                     </div>
                 `;
+                // Hint button logic
+                if (card.sampleSentence && card.sampleSentence.trim()) {
+                    const showHintBtn = document.getElementById('showHintBtn');
+                    const hintPopup = document.getElementById('hintPopup');
+                    showHintBtn.onclick = function() {
+                        hintPopup.textContent = card.sampleSentence;
+                        hintPopup.style.display = '';
+                        showHintBtn.style.display = 'none';
+                    };
+                }
                 // Add answer checking logic with up to 3 tries
                 let clozeTries = 0;
                 document.getElementById('checkClozeAnswer').onclick = function() {
@@ -3120,6 +3132,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     <div id="cardContent">
                         <div id="cardFront" class="card-side">
                             <div class="text-lg font-semibold text-gray-800 mb-4">${card.front || ''}</div>
+                            <button id="showHintBtn" class="bg-yellow-200 hover:bg-yellow-300 text-yellow-900 px-3 py-1 rounded text-sm mb-2" style="display:${card.sampleSentence && card.sampleSentence.trim() ? '' : 'none'}">💡 Show Hint</button>
+                            <div id="hintPopup" class="text-base text-gray-700 mb-2" style="display:none;"></div>
                             <div class="mb-3">
                                 <button data-play-question="${escapeJs(card.front || '')}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Question</button>
                                 <button data-stop-audio class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
@@ -3159,6 +3173,16 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     </div>
                 </div>
                 `;
+                // Hint button logic
+                if (card.sampleSentence && card.sampleSentence.trim()) {
+                    const showHintBtn = document.getElementById('showHintBtn');
+                    const hintPopup = document.getElementById('hintPopup');
+                    showHintBtn.onclick = function() {
+                        hintPopup.textContent = card.sampleSentence;
+                        hintPopup.style.display = '';
+                        showHintBtn.style.display = 'none';
+                    };
+                }
             }
 
             // Wire the shared header category select to this card
@@ -3838,7 +3862,12 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
         // Open a modal to create a single flashcard manually
         function openCreateCardModal(existing) {
-            // existing param reserved for future edits
+            // If editing, store card globally for injectCreateModalContent
+            if (existing) {
+                window._editCard = existing;
+            } else {
+                window._editCard = null;
+            }
             let modal = document.getElementById('createCardModal');
             if (modal) modal.remove();
             modal = document.createElement('div');
@@ -3866,9 +3895,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
         }
 
         function injectCreateModalContent(modal, catOptions) {
+            const editing = window._editCard || null;
             modal.innerHTML = `
-                <div style="background:white;max-width:720px;width:92vw;border-radius:12px;padding:20px;box-sizing:border-box;">
-                    <h3 style="margin-top:0;margin-bottom:8px;font-size:1.2rem;">Create Flashcard</h3>
+                <div style="background:white;max-width:720px;width:92vw;border-radius:12px;padding:20px;box-sizing:border-box;max-height:80vh;overflow-y:auto;">
+                    <h3 style="margin-top:0;margin-bottom:8px;font-size:1.2rem;">${editing ? 'Edit Flashcard' : 'Create Flashcard'}</h3>
                     <div style="display:flex;flex-direction:column;gap:8px;">
                         <label>Card Type:
                             <select id="createCardType" style="padding:6px;border-radius:6px;border:1px solid #ccc;">
@@ -3877,15 +3907,26 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             </select>
                         </label>
                         <div id="basicFields">
-                            <label>Front (Question):<textarea id="createFront" style="width:100%;min-height:80px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea></label>
-                            <label>Back (Answer):<textarea id="createBack" style="width:100%;min-height:120px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea></label>
+                            <label>Front (Question):<textarea id="createFront" style="width:100%;min-height:80px;padding:8px;border:1px solid #ddd;border-radius:6px;">${editing && editing.front ? editing.front : ''}</textarea></label>
+                            <label>Back (Answer):<textarea id="createBack" style="width:100%;min-height:120px;padding:8px;border:1px solid #ddd;border-radius:6px;">${editing && editing.back ? editing.back : ''}</textarea></label>
                         </div>
                         <div id="clozeFields" style="display:none;">
                             <label>Cloze Text (use <code>{{answer}}</code> for blanks):
-                                <textarea id="createCloze" style="width:100%;min-height:100px;padding:8px;border:1px solid #ddd;border-radius:6px;" placeholder="e.g. The capital of France is {{Paris}}."></textarea>
+                                <textarea id="createCloze" style="width:100%;min-height:100px;padding:8px;border:1px solid #ddd;border-radius:6px;" placeholder="e.g. The capital of France is {{Paris}}.">${editing && editing.clozeText ? editing.clozeText : ''}</textarea>
                             </label>
                             <div class="text-xs text-gray-500" style="margin-top:-4px;">Use <code>{{word}}</code> for each blank. You can have multiple blanks.</div>
                         </div>
+                        <label>Hint (optional):
+                            <textarea id="createSampleSentence" style="width:100%;min-height:40px;padding:8px;border:1px solid #ddd;border-radius:6px;" placeholder="e.g. This is a clue to help answer the card.">${editing && editing.sampleSentence ? editing.sampleSentence : ''}</textarea>
+                        </label>
+                        <label>Audio Files (optional):
+                            <input type="file" id="createAudioFiles" accept="audio/*" multiple>
+                            <div id="audioPreview" class="mt-1"></div>
+                        </label>
+                        <label>Image Files (optional):
+                            <input type="file" id="createImageFiles" accept="image/*" multiple>
+                            <div id="imagePreview" class="mt-1 flex flex-wrap gap-2"></div>
+                        </label>
                         <label>Category:<select id="createCategory" style="padding:6px;border-radius:6px;border:1px solid #ccc;">${catOptions}</select></label>
                         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
                             <button id="createCancel" style="background:#e2e8f0;padding:8px 12px;border-radius:6px;border:none;cursor:pointer;">Cancel</button>
@@ -3895,6 +3936,42 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     <button onclick="document.getElementById('createCardModal') && document.getElementById('createCardModal').remove()" style="position:absolute;top:24px;right:40px;font-size:1.5rem;background:#eee;border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;">&times;</button>
                 </div>
             `;
+            // Audio preview logic
+            setTimeout(() => {
+                const audioInput = document.getElementById('createAudioFiles');
+                if (audioInput) {
+                    audioInput.addEventListener('change', function(e) {
+                        const preview = document.getElementById('audioPreview');
+                        preview.innerHTML = '';
+                        Array.from(this.files).forEach(file => {
+                            const url = URL.createObjectURL(file);
+                            const audio = document.createElement('audio');
+                            audio.controls = true;
+                            audio.src = url;
+                            audio.style.marginRight = '8px';
+                            preview.appendChild(audio);
+                        });
+                    });
+                }
+                // Image preview logic
+                const imageInput = document.getElementById('createImageFiles');
+                if (imageInput) {
+                    imageInput.addEventListener('change', function(e) {
+                        let clozeHtml = card.clozeText;
+                        preview.innerHTML = '';
+                        Array.from(this.files).forEach(file => {
+                            const url = URL.createObjectURL(file);
+                            const img = document.createElement('img');
+                            img.src = url;
+                            img.style.maxWidth = '80px';
+                            img.style.maxHeight = '80px';
+                            img.style.borderRadius = '6px';
+                            img.style.border = '1px solid #ccc';
+                            preview.appendChild(img);
+                        });
+                    });
+                }
+            }, 0);
             document.body.appendChild(modal);
 
             document.getElementById('createCancel').onclick = function() { document.getElementById('createCardModal') && document.getElementById('createCardModal').remove(); };
@@ -3913,6 +3990,133 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const type = document.getElementById('createCardType').value;
             const cat = document.getElementById('createCategory').value;
             let data;
+            const editing = window._editCard || null;
+
+            // --- Media and sentence fields ---
+            // Gather audio and image files as base64
+            const audioInput = document.getElementById('createAudioFiles');
+            const imageInput = document.getElementById('createImageFiles');
+            const sampleSentence = document.getElementById('createSampleSentence') ? document.getElementById('createSampleSentence').value.trim() : '';
+
+            // Helper to convert File to base64
+            function fileToBase64(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve({
+                        name: file.name,
+                        type: file.type,
+                        data: reader.result
+                    });
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            async function gatherMediaAndSave() {
+                const audioFiles = audioInput && audioInput.files ? await Promise.all(Array.from(audioInput.files).map(fileToBase64)) : [];
+                const imageFiles = imageInput && imageInput.files ? await Promise.all(Array.from(imageInput.files).map(fileToBase64)) : [];
+
+                let data;
+                if (type === 'cloze') {
+                    const clozeText = document.getElementById('createCloze').value.trim();
+                    if (!clozeText || !clozeText.includes('{{') || !clozeText.includes('}}')) {
+                        return alert('Please provide cloze text with at least one {{blank}}.');
+                    }
+                    data = {
+                        type: 'cloze',
+                        clozeText,
+                        audioFiles,
+                        imageFiles,
+                        sampleSentence,
+                        videoTitle: 'Manual Card',
+                        videoUrl: '',
+                        subject: '',
+                        categoryId: cat === '' ? '' : cat,
+                        createdAt: editing && editing.createdAt ? editing.createdAt : new Date().toISOString(),
+                        nextReview: editing && editing.nextReview ? editing.nextReview : new Date().toISOString(),
+                        interval: editing && editing.interval ? editing.interval : 1,
+                        easeFactor: editing && editing.easeFactor ? editing.easeFactor : 2.5,
+                        repetitions: editing && editing.repetitions ? editing.repetitions : 0,
+                        timesStudied: editing && editing.timesStudied ? editing.timesStudied : 0,
+                        lastDifficulty: editing && editing.lastDifficulty ? editing.lastDifficulty : null
+                    };
+                } else {
+                    let front = document.getElementById('createFront').value.trim();
+                    let back = document.getElementById('createBack').value.trim();
+                    if (!front || !back) return alert('Please provide both front and back text for the card');
+                    data = {
+                        type: 'basic',
+                        front,
+                        back,
+                        audioFiles,
+                        imageFiles,
+                        sampleSentence,
+                        videoTitle: 'Manual Card',
+                        videoUrl: '',
+                        subject: '',
+                        categoryId: cat === '' ? '' : cat,
+                        createdAt: editing && editing.createdAt ? editing.createdAt : new Date().toISOString(),
+                        nextReview: editing && editing.nextReview ? editing.nextReview : new Date().toISOString(),
+                        interval: editing && editing.interval ? editing.interval : 1,
+                        easeFactor: editing && editing.easeFactor ? editing.easeFactor : 2.5,
+                        repetitions: editing && editing.repetitions ? editing.repetitions : 0,
+                        timesStudied: editing && editing.timesStudied ? editing.timesStudied : 0,
+                        lastDifficulty: editing && editing.lastDifficulty ? editing.lastDifficulty : null
+                    };
+                }
+
+                if (!db) {
+                    alert('Database not ready. Try again in a moment.');
+                    return;
+                }
+
+                if (editing && editing.id) {
+                    // Update existing card
+                    data.id = editing.id;
+                    const tx2 = db.transaction(['flashcards'], 'readwrite');
+                    const store2 = tx2.objectStore('flashcards');
+                    const putReq = store2.put(data);
+                    putReq.onsuccess = function() {
+                        document.getElementById('createCardModal') && document.getElementById('createCardModal').remove();
+                        try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}
+                        alert('Card updated');
+                        window._editCard = null;
+                    };
+                    putReq.onerror = function(e) { alert('Error updating card: ' + e.target.error); };
+                } else {
+                    // Create new card (original logic)
+                    const tx = db.transaction(['categories'], 'readonly');
+                    const store = tx.objectStore('categories');
+                    const getReq = store.get(Number(cat));
+                    getReq.onsuccess = function(evt) {
+                        const category = evt.target.result || {};
+                        const preset = category && category.pacingPreset ? getPresetById(category.pacingPreset) : null;
+                        if (preset) {
+                            data.interval = (preset.initialInterval) ? Number(preset.initialInterval) : 1;
+                            data.easeFactor = (preset.easeFactor) ? Number(preset.easeFactor) : 2.5;
+                        }
+                        const tx2 = db.transaction(['flashcards'], 'readwrite');
+                        const store2 = tx2.objectStore('flashcards');
+                        const addReq = store2.add(data);
+                        addReq.onsuccess = function() {
+                            document.getElementById('createCardModal') && document.getElementById('createCardModal').remove();
+                            try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}
+                            alert('Card created');
+                        };
+                        addReq.onerror = function(e) { alert('Error saving card: ' + e.target.error); };
+                    };
+                    getReq.onerror = function() {
+                        const tx2 = db.transaction(['flashcards'], 'readwrite');
+                        const store2 = tx2.objectStore('flashcards');
+                        store2.add(data).onsuccess = function() { document.getElementById('createCardModal') && document.getElementById('createCardModal').remove(); try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}; alert('Card created'); };
+                    };
+                }
+            }
+
+            // Run async gather/save
+            gatherMediaAndSave();
+            return;
+
             if (type === 'cloze') {
                 const clozeText = document.getElementById('createCloze').value.trim();
                 if (!clozeText || !clozeText.includes('{{') || !clozeText.includes('}}')) {
@@ -3921,6 +4125,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 data = {
                     type: 'cloze',
                     clozeText,
+                    audioFiles,
+                    imageFiles,
+                    sampleSentence,
                     videoTitle: 'Manual Card',
                     videoUrl: '',
                     subject: '',
@@ -3941,6 +4148,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     type: 'basic',
                     front,
                     back,
+                    audioFiles,
+                    imageFiles,
+                    sampleSentence,
                     videoTitle: 'Manual Card',
                     videoUrl: '',
                     subject: '',
@@ -5622,87 +5832,12 @@ window.sortAllCardsTable = function(col) {
         // Open edit modal for a single card
         function openEditCardModal(cardId) {
             if (!db) return;
-            const tx = db.transaction(['flashcards', 'categories'], 'readonly');
+            const tx = db.transaction(['flashcards'], 'readonly');
             const store = tx.objectStore('flashcards');
-            const catStore = tx.objectStore('categories');
             const req = store.get(cardId);
             req.onsuccess = function(evt) {
                 const card = evt.target.result;
-                const catReq = catStore.getAll();
-                catReq.onsuccess = function(e) {
-                    const cats = e.target.result || [];
-                    let modal = document.getElementById('editCardModal');
-                    if (!modal) {
-                        modal = document.createElement('div');
-                        modal.id = 'editCardModal';
-                        modal.style.position = 'fixed';
-                        modal.style.top = '0';
-                        modal.style.left = '0';
-                        modal.style.width = '100vw';
-                        modal.style.height = '100vh';
-                        modal.style.background = 'rgba(0,0,0,0.6)';
-                        modal.style.zIndex = '10001';
-                        modal.style.display = 'flex';
-                        modal.style.justifyContent = 'center';
-                        modal.style.alignItems = 'center';
-                        document.body.appendChild(modal);
-                    }
-
-                    const catOptions = cats.map(c => `<option value='${c.id}'>${c.name}</option>`).join('');
-                    const selectedCat = card && (card.categoryId !== undefined && card.categoryId !== null) ? String(card.categoryId) : '';
-
-                    modal.innerHTML = `
-                        <div style='background:white;max-width:700px;width:95vw;border-radius:12px;padding:20px;'>
-                            <h2 style='font-size:1.25rem;margin-bottom:8px;'>Edit Flashcard</h2>
-                            <div style='display:flex;flex-direction:column;gap:8px;'>
-                                <label>Front</label>
-                                <textarea id='editFront' style='width:100%;min-height:80px;padding:8px;border:1px solid #ddd;border-radius:6px;'>${card ? (card.front || '') : ''}</textarea>
-                                <label>Back</label>
-                                <textarea id='editBack' style='width:100%;min-height:120px;padding:8px;border:1px solid #ddd;border-radius:6px;'>${card ? (card.back || '') : ''}</textarea>
-                                <label>Category</label>
-                                <div style='display:flex;gap:8px;align-items:center;'>
-                                    <select id='editCategorySelect' style='flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;'>
-                                        <option value=''>Uncategorized</option>
-                                        ${catOptions}
-                                        <option value='__add_new__'>Add New...</option>
-                                    </select>
-                                    <div id='editAddContainer'></div>
-                                </div>
-                            </div>
-                            <div style='margin-top:12px;display:flex;justify-content:flex-end;gap:8px;'>
-                                <button onclick='closeEditModal()' style='padding:8px 12px;background:#a0aec0;color:white;border:none;border-radius:6px;'>Cancel</button>
-                                <button onclick='saveEditModal(${cardId})' style='padding:8px 12px;background:#3182ce;color:white;border:none;border-radius:6px;'>Save</button>
-                            </div>
-                        </div>
-                    `;
-
-                    // Set selected category
-                    const editSel = document.getElementById('editCategorySelect');
-                    if (editSel) editSel.value = selectedCat;
-
-                    // Hook add-new behavior
-                    editSel.addEventListener('change', async function() {
-                        if (this.value === '__add_new__') {
-                            const container = document.getElementById('editAddContainer');
-                            container.innerHTML = `<input id='editNewCat' placeholder='New category name' style='padding:6px;border:1px solid #ccc;border-radius:6px;' /><button id='editNewAdd' style='background:#3182ce;color:white;border:none;padding:6px 8px;border-radius:6px;margin-left:6px;cursor:pointer;'>Add</button><button id='editNewCancel' style='background:#a0aec0;color:white;border:none;padding:6px 8px;border-radius:6px;margin-left:6px;cursor:pointer;'>Cancel</button>`;
-                            document.getElementById('editNewAdd').addEventListener('click', async () => {
-                                const name = document.getElementById('editNewCat').value.trim();
-                                if (!name) return alert('Enter a category name');
-                                const id = await createCategoryFromPrompt(name);
-                                if (!id) return alert('Could not create category');
-                                // reload modal to include new category
-                                openEditCardModal(cardId);
-                            });
-                            document.getElementById('editNewCancel').addEventListener('click', () => {
-                                document.getElementById('editAddContainer').innerHTML = '';
-                                editSel.value = '';
-                            });
-                        } else {
-                            const container = document.getElementById('editAddContainer');
-                            if (container) container.innerHTML = '';
-                        }
-                    });
-                };
+                openCreateCardModal(card);
             };
         }
 
