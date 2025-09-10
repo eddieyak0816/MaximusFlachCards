@@ -3910,6 +3910,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         <label style="display:block;margin-bottom:6px;">Detailed answers after how many student messages? <small style="color:#666;">(Default 5)</small></label>
                         <input id="settingsVerboseAfter" type="number" min="1" max="50" value="5" style="width:100px;padding:6px;border:1px solid #ccc;border-radius:6px;" />
                     </div>
+                    <div style="margin-bottom:12px;">
+                        <button id="manageCategoriesBtn" style="background:#7c3aed;color:#fff;padding:8px 12px;border-radius:6px;border:none;cursor:pointer;">Manage Categories</button>
+                    </div>
                     <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
                         <button id="playSampleBtn" style="background:#10b981;color:#fff;padding:8px 12px;border-radius:6px;border:none;">Play sample</button>
                         <button id="saveSettingsBtn" style="background:#2563eb;color:#fff;padding:8px 12px;border-radius:6px;border:none;">Save</button>
@@ -3943,6 +3946,11 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const opts = { voiceName: settingsVoice, rate: settingsRate, pitch: settingsPitch };
                     speakTextWithOptions(txt, opts);
                 } catch (e) { console.error('Play sample failed', e); alert('Could not play sample voice.'); }
+            };
+            // Manage Categories button
+            document.getElementById('manageCategoriesBtn').onclick = () => {
+                m.remove(); // Close settings modal
+                openCategoryManager(); // Open category manager
             };
             // populate current values
             try {
