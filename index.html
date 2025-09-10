@@ -1265,6 +1265,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
             // Set up the study session
             setupFlashcardStudy();
             showStep(3);
+            // Ensure the first card is rendered with the correct category
+            setTimeout(() => {
+                if (typeof showCurrentCard === 'function') showCurrentCard();
+            }, 0);
         }
 
         // [Rest of the existing functions remain the same - calculateNextReview, saveFlashcard, etc.]
@@ -2868,33 +2872,60 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     if (!headerSel) return;
                     // mark header select so refreshAllCategorySelects rebuilds it
                     headerSel.setAttribute('data-card-id', card.id || `local-${currentCardIndex}`);
-                    refreshAllCategorySelects();
-
-                    // set the current value
-                    try { headerSel.value = (card.categoryId === undefined || card.categoryId === null) ? '' : String(card.categoryId); } catch(e) {}
-
-                    // attach change handler
-                    headerSel.onchange = function() {
-                        const v = headerSel.value;
-                        if (v === '__add_new__') {
-                            openCategoryManager();
-                            setTimeout(() => { try { refreshAllCategorySelects(); } catch(e){} }, 100);
-                            return;
+                    
+                    // Refresh categories and set the value after they're loaded
+                    if (!db) return;
+                    const tx = db.transaction(['categories'], 'readonly');
+                    const store = tx.objectStore('categories');
+                    const req = store.getAll();
+                    req.onsuccess = function() {
+                        const cats = req.result || [];
+                        
+                        // Rebuild the header select
+                        headerSel.innerHTML = '';
+                        const unc = document.createElement('option');
+                        unc.value = '';
+                        unc.textContent = 'Uncategorized';
+                        headerSel.appendChild(unc);
+                        
+                        // Append all categories
+                        cats.forEach(c => {
+                            const o = document.createElement('option');
+                            o.value = c.id;
+                            o.textContent = c.name;
+                            headerSel.appendChild(o);
+                        });
+                        
+                        // Now set the current value
+                        try { 
+                            headerSel.value = (card.categoryId === undefined || card.categoryId === null) ? '' : String(card.categoryId); 
+                        } catch(e) { 
+                            console.log('Could not set category value:', e);
                         }
-                        card.categoryId = v === '' ? '' : v;
-                        // persist if saved
-                        if (card && card.id && db) {
-                            const tx = db.transaction(['flashcards'], 'readwrite');
-                            const store = tx.objectStore('flashcards');
-                            const req = store.get(card.id);
-                            req.onsuccess = function() {
-                                const fc = req.result;
-                                if (fc) {
-                                    fc.categoryId = card.categoryId;
-                                    store.put(fc);
-                                }
-                            };
-                        }
+                        
+                        // attach change handler
+                        headerSel.onchange = function() {
+                            const v = headerSel.value;
+                            if (v === '__add_new__') {
+                                openCategoryManager();
+                                setTimeout(() => { try { refreshAllCategorySelects(); } catch(e){} }, 100);
+                                return;
+                            }
+                            card.categoryId = v === '' ? '' : v;
+                            // persist if saved
+                            if (card && card.id && db) {
+                                const tx = db.transaction(['flashcards'], 'readwrite');
+                                const store = tx.objectStore('flashcards');
+                                const req = store.get(card.id);
+                                req.onsuccess = function() {
+                                    const fc = req.result;
+                                    if (fc) {
+                                        fc.categoryId = card.categoryId;
+                                        store.put(fc);
+                                    }
+                                };
+                            }
+                        };
                     };
                 } catch (err) { console.error('Error wiring header category select:', err); }
             }, 20);
