@@ -3140,7 +3140,33 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const showHintBtn = document.getElementById('showHintBtn');
                     const hintPopup = document.getElementById('hintPopup');
                     showHintBtn.onclick = function() {
-                        hintPopup.textContent = card.sampleSentence;
+                        hintPopup.innerHTML = '';
+                        const hintText = card.sampleSentence || '';
+                        const textDiv = document.createElement('div');
+                        textDiv.textContent = hintText;
+                        textDiv.style.marginBottom = '6px';
+                        hintPopup.appendChild(textDiv);
+
+                        const controls = document.createElement('div');
+                        controls.style.display = 'flex';
+                        controls.style.gap = '8px';
+
+                        const playBtn = document.createElement('button');
+                        playBtn.className = 'bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-1 rounded text-sm';
+                        playBtn.textContent = '🔊';
+                        playBtn.title = 'Play hint';
+                        playBtn.onclick = function() { speakTextWithOptions(hintText); };
+
+                        const stopBtn = document.createElement('button');
+                        stopBtn.className = 'bg-gray-200 hover:bg-gray-300 text-gray-800 px-2 py-1 rounded text-sm';
+                        stopBtn.textContent = '■';
+                        stopBtn.title = 'Stop';
+                        stopBtn.onclick = stopSpeech;
+
+                        controls.appendChild(playBtn);
+                        controls.appendChild(stopBtn);
+                        hintPopup.appendChild(controls);
+
                         hintPopup.style.display = '';
                         showHintBtn.style.display = 'none';
                     };
@@ -3274,7 +3300,33 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const showHintBtn = document.getElementById('showHintBtn');
                     const hintPopup = document.getElementById('hintPopup');
                     showHintBtn.onclick = function() {
-                        hintPopup.textContent = card.sampleSentence;
+                        hintPopup.innerHTML = '';
+                        const hintText = card.sampleSentence || '';
+                        const textDiv = document.createElement('div');
+                        textDiv.textContent = hintText;
+                        textDiv.style.marginBottom = '6px';
+                        hintPopup.appendChild(textDiv);
+
+                        const controls = document.createElement('div');
+                        controls.style.display = 'flex';
+                        controls.style.gap = '8px';
+
+                        const playBtn = document.createElement('button');
+                        playBtn.className = 'bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-1 rounded text-sm';
+                        playBtn.textContent = '🔊';
+                        playBtn.title = 'Play hint';
+                        playBtn.onclick = function() { speakTextWithOptions(hintText); };
+
+                        const stopBtn = document.createElement('button');
+                        stopBtn.className = 'bg-gray-200 hover:bg-gray-300 text-gray-800 px-2 py-1 rounded text-sm';
+                        stopBtn.textContent = '■';
+                        stopBtn.title = 'Stop';
+                        stopBtn.onclick = stopSpeech;
+
+                        controls.appendChild(playBtn);
+                        controls.appendChild(stopBtn);
+                        hintPopup.appendChild(controls);
+
                         hintPopup.style.display = '';
                         showHintBtn.style.display = 'none';
                     };
@@ -4051,7 +4103,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             <input type="file" id="createAudioFiles" accept="audio/*" multiple>
                             <div style="margin-top:4px;">
                                 <button id="recordVoiceBtn" style="background:#3b82f6;color:white;padding:4px 8px;border:none;border-radius:4px;cursor:pointer;margin-right:8px;">🎤 Record Voice</button>
-                                <button id="generateAIAudioBtn" style="background:#10b981;color:white;padding:4px 8px;border:none;border-radius:4px;cursor:pointer;">🤖 Generate AI Audio</button>
+                                <button id="generateAIAudioBtn" style="background:#10b981;color:white;padding:4px 8px;border:none;border-radius:4px;cursor:pointer;">🤖 Generate Hint</button>
                             </div>
                             <div id="audioPreview" class="mt-1"></div>
                         </label>
@@ -4181,93 +4233,31 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     };
                 }
 
-                // AI Audio generation
+                // AI Hint generation (Generate Hint button)
                 const generateAIAudioBtn = document.getElementById('generateAIAudioBtn');
                 if (generateAIAudioBtn) {
                     generateAIAudioBtn.onclick = async function() {
-                        const text = document.getElementById('createCardType').value === 'cloze' 
-                            ? document.getElementById('createCloze').value 
-                            : document.getElementById('createFront').value;
-                        
-                        if (!text.trim()) {
-                            alert('Please enter some text first');
+                        const type = document.getElementById('createCardType').value;
+                        const front = type === 'cloze' ? document.getElementById('createCloze').value : document.getElementById('createFront').value;
+                        const back = type === 'cloze' ? '' : document.getElementById('createBack').value || '';
+
+                        if (!front || !front.trim()) {
+                            alert('Please enter some front text first');
                             return;
                         }
 
                         try {
-                            // Choose provider key in preferred order: Gemini -> OpenAI -> Anthropic
-                            const providers = [
-                                { name: 'gemini', key: localStorage.getItem('gemini_api_key') },
-                                { name: 'openai', key: localStorage.getItem('openai_api_key') },
-                                { name: 'anthropic', key: localStorage.getItem('anthropic_api_key') }
-                            ];
-                            const chosen = providers.find(p => p.key && p.key.trim());
-
-                            if (!chosen) {
-                                alert('Please add at least one AI API key in the AI Setup section (Gemini, OpenAI, or Anthropic).');
-                                return;
+                            const hint = await generateHintText(front.trim(), (back||'').trim());
+                            if (hint && hint.trim()) {
+                                const el = document.getElementById('createSampleSentence');
+                                if (el) el.value = hint.trim();
+                                // trigger change/preview update if any
+                                try { el.dispatchEvent(new Event('input')); } catch(e){}
+                            } else {
+                                alert('AI did not return a hint.');
                             }
-
-                            // Use chosen provider to enhance the text prompt if possible (Gemini preferred for enhancements)
-                            let enhancedText = text;
-                            if (chosen.name === 'gemini') {
-                                try {
-                                    const gemResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${chosen.key}`, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({
-                                            contents: [{ parts: [{ text: `Rewrite this short prompt for clear TTS output: ${text}` }] }],
-                                            generationConfig: { temperature: 0.2, maxOutputTokens: 200 }
-                                        })
-                                    });
-                                    if (gemResp.ok) {
-                                        const data = await gemResp.json();
-                                        enhancedText = data.candidates?.[0]?.content?.parts?.[0]?.text || text;
-                                    }
-                                } catch (e) { /* ignore enhancement errors */ }
-                            }
-
-                            // For generating an audio file we currently support OpenAI TTS in this demo
-                            const openaiKey = localStorage.getItem('openai_api_key');
-                            if (openaiKey && openaiKey.trim()) {
-                                // Use OpenAI TTS to generate an audio file
-                                const response = await fetch('https://api.openai.com/v1/audio/speech', {
-                                    method: 'POST',
-                                    headers: {
-                                        'Authorization': `Bearer ${openaiKey}`,
-                                        'Content-Type': 'application/json'
-                                    },
-                                    body: JSON.stringify({
-                                        model: 'tts-1',
-                                        input: enhancedText,
-                                        voice: 'alloy'
-                                    })
-                                });
-
-                                if (!response.ok) throw new Error('API request failed');
-
-                                const blob = await response.blob();
-                                const file = new File([blob], 'ai-generated-audio.mp3', { type: 'audio/mpeg' });
-
-                                // Add to file input
-                                const dt = new DataTransfer();
-                                if (audioInput.files) {
-                                    Array.from(audioInput.files).forEach(f => dt.items.add(f));
-                                }
-                                dt.items.add(file);
-                                audioInput.files = dt.files;
-
-                                // Trigger change event
-                                audioInput.dispatchEvent(new Event('change'));
-                                return;
-                            }
-
-                            // If we reach here OpenAI key is not available. Inform the user that TTS file generation requires OpenAI in this demo,
-                            // but we already enhanced the prompt with the chosen LLM key (if any). Offer to record in-browser TTS instead.
-                            alert('No OpenAI API key available to generate an audio file. I used your provided LLM key to improve the prompt (if available).\n\nTo generate a downloadable AI audio file in this demo, please add your OpenAI API key in AI Setup. Alternatively, you can use the Record Voice button to capture in-browser TTS or your own voice.');
-
                         } catch (e) {
-                            alert('Failed to generate AI audio: ' + e.message);
+                            alert('Failed to generate hint: ' + (e && e.message ? e.message : e));
                         }
                     };
                 }
@@ -4407,6 +4397,53 @@ Make sure each flashcard tests something specific from the transcript content.`;
             };
     }
 
+    // Generate a concise hint text from front and back content using available LLM keys
+    async function generateHintText(frontText, backText) {
+        const geminiKey = localStorage.getItem('gemini_api_key');
+        const openaiKey = localStorage.getItem('openai_api_key');
+        const prompt = `Generate a single short hint (1-2 brief sentences) that helps recall the answer. Front: "${frontText.replace(/"/g,'\"')}" Back: "${(backText||'').replace(/"/g,'\"')}"\n\nKeep it neutral, concise, and avoid giving the full answer.`;
+
+        // Prefer Gemini if available
+        if (geminiKey) {
+            try {
+                const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 120 } })
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const out = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                    return (out || '').trim();
+                }
+            } catch (e) { console.warn('Gemini hint generation failed', e); }
+        }
+
+        // Fallback to OpenAI (text completion)
+        if (openaiKey) {
+            try {
+                const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: 'You are a concise hint generator.' }, { role: 'user', content: prompt }], max_tokens: 120, temperature: 0.2 })
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const out = data.choices?.[0]?.message?.content || '';
+                    return (out || '').trim();
+                }
+            } catch (e) { console.warn('OpenAI hint generation failed', e); }
+        }
+
+        // As a last resort, craft a simple heuristic hint from front/back
+        try {
+            const f = frontText.split(/[\.\?\!\n]/)[0] || frontText;
+            const b = backText ? backText.split(/[\.\?\!\n]/)[0] : '';
+            const hint = b ? `Hint: relate to ${b.split(' ').slice(0,4).join(' ')}.` : `Hint: think about ${f.split(' ').slice(0,4).join(' ')}.`;
+            return hint;
+        } catch (e) { return '';} 
+    }
+
         // Save created card into IndexedDB with sensible defaults and optional category preset
         function saveCreatedCard() {
             const type = document.getElementById('createCardType').value;
@@ -4486,17 +4523,34 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 }
 
                 let data;
+                // If no hint provided, auto-generate one using front/back content
+                let finalSample = sampleSentence || '';
+                try {
+                    if (!finalSample || finalSample.trim() === '') {
+                        const typeLocal = type;
+                        if (typeLocal === 'cloze') {
+                            const frontText = document.getElementById('createCloze').value.trim();
+                            const hint = await generateHintText(frontText, '');
+                            finalSample = hint || '';
+                        } else {
+                            const frontText = document.getElementById('createFront').value.trim();
+                            const backText = document.getElementById('createBack').value.trim();
+                            const hint = await generateHintText(frontText, backText);
+                            finalSample = hint || '';
+                        }
+                    }
+                } catch (e) { console.warn('Could not auto-generate hint', e); }
                 if (type === 'cloze') {
                     const clozeText = document.getElementById('createCloze').value.trim();
                     if (!clozeText || !clozeText.includes('{{') || !clozeText.includes('}}')) {
                         return alert('Please provide cloze text with at least one {{blank}}.');
                     }
-                    data = {
+                        data = {
                         type: 'cloze',
                         clozeText,
                         audioFiles,
                         imageFiles,
-                        sampleSentence,
+                        sampleSentence: finalSample,
                         videoTitle: 'Manual Card',
                         videoUrl: '',
                         subject: '',
@@ -4513,13 +4567,13 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     let front = document.getElementById('createFront').value.trim();
                     let back = document.getElementById('createBack').value.trim();
                     if (!front || !back) return alert('Please provide both front and back text for the card');
-                    data = {
+                        data = {
                         type: 'basic',
                         front,
                         back,
                         audioFiles,
                         imageFiles,
-                        sampleSentence,
+                        sampleSentence: finalSample,
                         videoTitle: 'Manual Card',
                         videoUrl: '',
                         subject: '',
