@@ -1280,7 +1280,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
         // Growth rate is intentionally a bit lower than a standard SM-2 curve.
         // Accepts difficulty ('easy'|'medium'|'hard') and uses a quality mapping to 0-5.
         // Returns { nextReview, interval (days, may be fractional), easeFactor, repetitions }
-        function calculateNextReview(difficulty, previousInterval = 1, easeFactor = 2.5, repetitions = 0) {
+        function calculateNextReview(difficulty, previousInterval = 1, easeFactor = 2.5, repetitions = 0, preset = null) {
             // Map difficulty to SM-2 quality score (0-5)
             const qualityMap = { easy: 5, medium: 4, hard: 2 };
             const q = qualityMap[difficulty] !== undefined ? qualityMap[difficulty] : 3;
@@ -1295,23 +1295,17 @@ Make sure each flashcard tests something specific from the transcript content.`;
             if (q >= 3) {
                 // Successful response
                 if (newReps === 0) {
-                    // First successful recall after first view - set according to difficulty
-                    if (difficulty === 'hard') {
-                        interval = minIntervalDays; // 5 minutes
-                    } else if (difficulty === 'medium') {
-                        interval = 1; // 1 day
-                    } else {
-                        interval = 2; // easy -> 2 days
-                    }
+                    // First successful recall after first view - use initial interval from preset or default
+                    interval = (preset && preset.initialInterval) ? preset.initialInterval : 1;
                 } else {
-                    // Use user-requested multipliers and round up
-                    if (difficulty === 'medium') {
-                        interval = Math.ceil(previousInterval * 1.25);
-                    } else if (difficulty === 'easy') {
-                        interval = Math.ceil(previousInterval * 1.5);
+                    // Use forgetting curve multipliers from preset
+                    if (difficulty === 'easy' && preset && preset.easyMultiplier) {
+                        interval = Math.ceil(previousInterval * preset.easyMultiplier);
+                    } else if (difficulty === 'medium' && preset && preset.mediumMultiplier) {
+                        interval = Math.ceil(previousInterval * preset.mediumMultiplier);
                     } else {
-                        // fallback for hard or unknown: keep old logic
-                        interval = previousInterval * newEf * 0.9;
+                        // fallback for unknown difficulty or no preset
+                        interval = Math.ceil(previousInterval * 1.5);
                     }
                 }
                 newReps += 1;
@@ -1363,18 +1357,25 @@ Make sure each flashcard tests something specific from the transcript content.`;
                         const prevInterval = card.interval || 1;
                         const ef = (typeof card.easeFactor === 'number') ? card.easeFactor : 2.5;
                         const reps = card.repetitions || 0;
-                        const r = calculateNextReview(difficulty, prevInterval, ef, reps);
+                        
+                        // Get preset for this card's category
+                        let preset = null;
+                        if (card.categoryId && db) {
+                            const catId = (card.categoryId === undefined || card.categoryId === null || card.categoryId === '') ? '' : String(card.categoryId);
+                            // This is async, so for now we'll use null and the function will fall back to defaults
+                            // The preset lookup would need to be async, which would complicate this function
+                        }
+                        
+                        const r = calculateNextReview(difficulty, prevInterval, ef, reps, preset);
                         return formatIntervalLabel(r.interval);
                     }
                 } catch (e) {
                     console.error('Error projecting label:', e);
                 }
 
-                // Fallback to first-view defaults
-                if (difficulty === 'hard') return '5m';
-                if (difficulty === 'medium') return '1d';
-                if (difficulty === 'easy') return '2d';
-                return '';
+                // Fallback to first-view defaults (all use 1 day initial interval)
+                if (difficulty === 'hard') return '5m'; // Failed recall
+                return '1d'; // First successful recall for any difficulty
             }
 
         // Save flashcard to database
@@ -1393,8 +1394,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 const tx0 = db.transaction(['flashcards'], 'readwrite');
                 const store0 = tx0.objectStore('flashcards');
                 const flashcardData0 = {
-                    front: stripEmojis(flashcard.front || ''),
-                    back: stripEmojis(flashcard.back || ''),
+                    front: flashcard.front || '',
+                    back: flashcard.back || '',
                     videoTitle: videoData.title,
                     videoUrl: videoData.url,
                     subject: videoData.subject,
@@ -1423,8 +1424,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 const tx2 = db.transaction(['flashcards'], 'readwrite');
                 const store2 = tx2.objectStore('flashcards');
                 // sanitize text: remove emojis from front/back
-                const sanitizedFront = stripEmojis(flashcard.front || '');
-                const sanitizedBack = stripEmojis(flashcard.back || '');
+                const sanitizedFront = flashcard.front || '';
+                const sanitizedBack = flashcard.back || '';
 
                 const flashcardData = {
                     front: sanitizedFront,
@@ -1600,7 +1601,11 @@ Make sure each flashcard tests something specific from the transcript content.`;
         function speakFeedbackText(buttonElement) {
             const feedbackText = buttonElement.getAttribute('data-feedback-text');
             if (feedbackText) {
-                speakTextWithOptions(feedbackText, {rate: 0.9, pitch: 1.0});
+                // Use preferred voice with custom rate/pitch for feedback
+                const opts = { rate: 0.9, pitch: 1.0 };
+                const voiceName = getPreferredVoiceName();
+                if (voiceName) opts.voiceName = voiceName;
+                speakTextWithOptions(feedbackText, opts);
             }
         }
 
@@ -1699,17 +1704,17 @@ Make sure each flashcard tests something specific from the transcript content.`;
             } catch (e) { return { new: '', review: '' }; }
         }
 
-        // Pacing presets (default set). Stored in localStorage under 'pacingPresets' if later customized.
+        // Pacing presets based on forgetting curve principles with different growth rates
         function getPacingPresets() {
             const raw = localStorage.getItem('pacingPresets');
             if (raw) {
                 try { return JSON.parse(raw); } catch (e) { /* fallthrough */ }
             }
-            // default presets
+            // default presets based on forgetting curve principles
             return [
-                { id: 'conservative', name: 'Conservative', initialInterval: 2, intervalMultiplier: 1.25, easeFactor: 2.8 },
-                { id: 'balanced', name: 'Balanced', initialInterval: 1, intervalMultiplier: 1.0, easeFactor: 2.5 },
-                { id: 'aggressive', name: 'Aggressive', initialInterval: 0.5, intervalMultiplier: 0.85, easeFactor: 2.2 }
+                { id: 'conservative', name: 'Conservative', initialInterval: 1, easyMultiplier: 1.5, mediumMultiplier: 1.25, easeFactor: 2.6 },
+                { id: 'balanced', name: 'Balanced', initialInterval: 1, easyMultiplier: 2.0, mediumMultiplier: 1.5, easeFactor: 2.4 },
+                { id: 'aggressive', name: 'Aggressive', initialInterval: 1, easyMultiplier: 2.5, mediumMultiplier: 1.75, easeFactor: 2.2 }
             ];
         }
 
@@ -2958,7 +2963,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 <div class="bg-white border-2 border-gray-200 rounded-xl p-8 text-center min-h-64 flex flex-col justify-center shadow-lg">
                     <div id="cardContent">
                         <div id="cardFront" class="card-side">
-                            <div class="text-lg font-semibold text-gray-800 mb-4">${stripEmojis(card.front || '')}</div>
+                            <div class="text-lg font-semibold text-gray-800 mb-4">${card.front || ''}</div>
                             <div class="mb-3">
                                 <button data-play-question="${escapeJs(card.front || '')}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Question</button>
                                 <button data-stop-audio class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
@@ -2969,7 +2974,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             </div>
                         </div>
                         <div id="cardBack" class="card-side hidden">
-                            <div class="text-lg font-semibold text-gray-800 mb-4">${stripEmojis(card.back || '')}</div>
+                            <div class="text-lg font-semibold text-gray-800 mb-4">${card.back || ''}</div>
                             <div class="mb-3">
                                 <button data-play-answer="${escapeJs(card.back || '')}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Answer</button>
                                 <button data-play-qa data-play-qa-q="${escapeJs(card.front || '')}" data-play-qa-a="${escapeJs(card.back || '')}" class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded text-sm mr-2">🔁 Play Q→A</button>
@@ -3729,9 +3734,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
         function saveCreatedCard() {
             let front = document.getElementById('createFront').value.trim();
             let back = document.getElementById('createBack').value.trim();
-            // remove emojis before saving
-            front = stripEmojis(front);
-            back = stripEmojis(back);
+            // preserve emojis when saving
+            // front = stripEmojis(front);
+            // back = stripEmojis(back);
             const cat = document.getElementById('createCategory').value;
             if (!front || !back) return alert('Please provide both front and back text for the card');
 
@@ -4145,44 +4150,51 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const currentCard = studyQueue[currentCardIndex];
             
             if (currentCard && currentCard.id) {
-                // Calculate new review data immediately for instant UI feedback
-                const reviewData = calculateNextReview(
-                    difficulty,
-                    currentCard.interval || 1,
-                    currentCard.easeFactor || 2.5,
-                    currentCard.repetitions || 0
-                );
-                
-                // Check for category pacing preset
+                // Get category preset first, then calculate review data
                 const catId = (currentCard.categoryId === undefined || currentCard.categoryId === null || currentCard.categoryId === '') ? '' : currentCard.categoryId;
-                let finalInterval = reviewData.interval;
                 
                 if (catId !== '' && db) {
-                    // Get category preset synchronously if possible
-                    try {
-                        const cTx = db.transaction(['categories'], 'readonly');
-                        const cStore = cTx.objectStore('categories');
-                        const catReq = cStore.get(Number(catId));
-                        catReq.onsuccess = function(evt) {
-                            const cat = evt.target.result || {};
-                            const preset = cat && cat.pacingPreset ? getPresetById(cat.pacingPreset) : null;
-                            if (preset && preset.intervalMultiplier) {
-                                finalInterval = Number(finalInterval) * Number(preset.intervalMultiplier);
-                            }
-                            // Update with final interval
-                            updateCardWithFinalInterval(currentCard, reviewData, finalInterval, difficulty);
-                        };
-                        catReq.onerror = function() {
-                            // Use default interval
-                            updateCardWithFinalInterval(currentCard, reviewData, finalInterval, difficulty);
-                        };
-                    } catch (e) {
-                        // Use default interval
-                        updateCardWithFinalInterval(currentCard, reviewData, finalInterval, difficulty);
-                    }
+                    // Get category preset asynchronously
+                    const cTx = db.transaction(['categories'], 'readonly');
+                    const cStore = cTx.objectStore('categories');
+                    const catReq = cStore.get(Number(catId));
+                    catReq.onsuccess = function(evt) {
+                        const cat = evt.target.result || {};
+                        const preset = cat && cat.pacingPreset ? getPresetById(cat.pacingPreset) : null;
+                        
+                        // Calculate new review data with preset
+                        const reviewData = calculateNextReview(
+                            difficulty,
+                            currentCard.interval || 1,
+                            currentCard.easeFactor || 2.5,
+                            currentCard.repetitions || 0,
+                            preset
+                        );
+                        
+                        // Update with final interval (preset multipliers are already applied in calculateNextReview)
+                        updateCardWithFinalInterval(currentCard, reviewData, reviewData.interval, difficulty);
+                    };
+                    catReq.onerror = function() {
+                        // Use default preset (null)
+                        const reviewData = calculateNextReview(
+                            difficulty,
+                            currentCard.interval || 1,
+                            currentCard.easeFactor || 2.5,
+                            currentCard.repetitions || 0,
+                            null
+                        );
+                        updateCardWithFinalInterval(currentCard, reviewData, reviewData.interval, difficulty);
+                    };
                 } else {
-                    // No category, use default interval
-                    updateCardWithFinalInterval(currentCard, reviewData, finalInterval, difficulty);
+                    // No category or no database, use default preset
+                    const reviewData = calculateNextReview(
+                        difficulty,
+                        currentCard.interval || 1,
+                        currentCard.easeFactor || 2.5,
+                        currentCard.repetitions || 0,
+                        null
+                    );
+                    updateCardWithFinalInterval(currentCard, reviewData, reviewData.interval, difficulty);
                 }
                 
                 // Update database asynchronously
@@ -4549,6 +4561,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     modal.style.alignItems = 'center';
                     modal.innerHTML = `<div id="modalContent" style="background:white;max-width:1200px;width:96vw;max-height:90vh;overflow:auto;border-radius:16px;padding:32px;box-shadow:0 8px 32px #0003;">
                         <h2 style="font-size:2rem;font-weight:bold;margin-bottom:1rem;">All Flashcards</h2>
+                        <div id="cardCountDisplay" style="font-size:1rem;color:#666;margin-bottom:1rem;">Loading cards...</div>
                         <button onclick="document.getElementById('flashcardModal').remove()" style="position:absolute;top:24px;right:40px;font-size:1.5rem;background:#eee;border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;">&times;</button>
                         <div id="flashcardTableContainer"></div>
                     </div>`;
@@ -4701,6 +4714,9 @@ window.sortAllCardsTable = function(col) {
 
                     tableHtml += `</tbody></table>`;
                     document.getElementById('flashcardTableContainer').innerHTML = tableHtml;
+
+                    // Update card count display
+                    updateCardCount();
 
                     // Inject bulk select options
                     const bulkSelectEl = document.getElementById('bulkCategorySelect');
@@ -5084,8 +5100,8 @@ window.sortAllCardsTable = function(col) {
             const req = store.get(cardId);
             req.onsuccess = function(evt) {
                 const card = evt.target.result || { id: cardId };
-                card.front = stripEmojis(front);
-                card.back = stripEmojis(back);
+                card.front = front;
+                card.back = back;
                 card.categoryId = categoryId;
                 store.put(card);
             };
@@ -5260,7 +5276,30 @@ window.sortAllCardsTable = function(col) {
 
                     tr.style.display = visible ? '' : 'none';
                 });
+
+                // Update card count display
+                updateCardCount();
             } catch (e) { console.error('applyTableFilters error', e); }
+        }
+
+        function updateCardCount() {
+            try {
+                const allRows = document.querySelectorAll('#flashcardTableContainer table tbody tr');
+                const visibleRows = document.querySelectorAll('#flashcardTableContainer table tbody tr:not([style*="display: none"])');
+                const totalCount = allRows.length;
+                const visibleCount = visibleRows.length;
+
+                const countDisplay = document.getElementById('cardCountDisplay');
+                if (countDisplay) {
+                    if (totalCount === 0) {
+                        countDisplay.textContent = 'No cards found';
+                    } else {
+                        countDisplay.textContent = `Showing ${visibleCount} of ${totalCount} cards`;
+                    }
+                }
+            } catch (e) {
+                console.error('updateCardCount error', e);
+            }
         }
 
         function clearAllFilters() {
@@ -5489,8 +5528,8 @@ window.sortAllCardsTable = function(col) {
             const req = store.get(cardId);
             req.onsuccess = function(evt) {
                 const card = evt.target.result || { id: cardId };
-                card.front = stripEmojis(front);
-                card.back = stripEmojis(back);
+                card.front = front;
+                card.back = back;
                 card.categoryId = categoryId;
                 store.put(card);
             };
