@@ -1966,10 +1966,24 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 const cats = req1.result || [];
 
                 // Initialize counts with uncategorized
-                const counts = { '': { id: '', name: 'Uncategorized', dueCount: 0 } };
-                cats.forEach(c => counts[String(c.id)] = { id: c.id, name: c.name, dueCount: 0 });
+                const counts = { '': { id: '', name: 'Uncategorized', dueCount: 0, dueToday: 0, hardToday: 0 } };
+                cats.forEach(c => counts[String(c.id)] = { id: c.id, name: c.name, dueCount: 0, dueToday: 0, hardToday: 0 });
 
-                // Now fetch due flashcards
+                // Get global defaults for category limits
+                const globalsRaw = localStorage.getItem('globalCategoryLimits');
+                let globals = { newCardsPerDay: null, reviewCardsPerDay: null };
+                try { if (globalsRaw) globals = Object.assign(globals, JSON.parse(globalsRaw)); } catch(e) {}
+
+                // Create category map for easy lookup
+                const catMap = {};
+                cats.forEach(c => { catMap[String(c.id)] = c; });
+
+                // Get today's date for filtering hard ratings
+                const today = new Date();
+                const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+                const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999).toISOString();
+
+                // First, get all due flashcards
                 const tx2 = db.transaction(['flashcards'], 'readonly');
                 const store2 = tx2.objectStore('flashcards');
                 const index = store2.index('nextReview');
@@ -1977,16 +1991,78 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 const range = IDBKeyRange.upperBound(now);
                 const req2 = index.getAll(range);
                 req2.onsuccess = function() {
-                    const due = req2.result || [];
-                    due.forEach(card => {
-                        const key = (card.categoryId === undefined || card.categoryId === null || card.categoryId === '') ? '' : String(card.categoryId);
-                        if (!counts[key]) counts[key] = { id: key, name: 'Unknown', dueCount: 0 };
-                        counts[key].dueCount = (counts[key].dueCount || 0) + 1;
+                    const allDue = req2.result || [];
+
+                    // Group cards by category and by new vs review (same logic as getFlashcardsDueForReview)
+                    const grouped = {}; // catId -> { new:[], review:[] }
+                    allDue.forEach(card => {
+                        const catKey = (card.categoryId === undefined || card.categoryId === null || card.categoryId === '') ? '' : String(card.categoryId);
+                        if (!grouped[catKey]) grouped[catKey] = { new: [], review: [] };
+                        // consider a card 'new' if timesStudied is falsy or repetitions===0 (never reviewed)
+                        const isNew = !card.timesStudied || card.repetitions === 0;
+                        if (isNew) grouped[catKey].new.push(card); else grouped[catKey].review.push(card);
+
+                        // Count total due (ignoring limits)
+                        if (!counts[catKey]) counts[catKey] = { id: catKey, name: 'Unknown', dueCount: 0, dueToday: 0, hardToday: 0 };
+                        counts[catKey].dueCount = (counts[catKey].dueCount || 0) + 1;
                     });
 
-                    // Convert to array sorted by dueCount desc
-                    const arr = Object.values(counts).sort((a,b) => b.dueCount - a.dueCount || String(a.name).localeCompare(b.name));
-                    callback(arr);
+                    // Calculate due today (respecting limits) - same logic as getFlashcardsDueForReview
+                    Object.keys(grouped).forEach(catId => {
+                        const cat = catMap[catId] || {};
+                        const perNew = (cat.newCardsPerDay === null || cat.newCardsPerDay === undefined) ? globals.newCardsPerDay : cat.newCardsPerDay;
+                        const perReview = (cat.reviewCardsPerDay === null || cat.reviewCardsPerDay === undefined) ? globals.reviewCardsPerDay : cat.reviewCardsPerDay;
+
+                        // Convert null to Infinity (no limit)
+                        const newLimit = (perNew === null || perNew === undefined) ? Infinity : Number(perNew);
+                        const reviewLimit = (perReview === null || perReview === undefined) ? Infinity : Number(perReview);
+
+                        // Count cards that would actually be shown for review today
+                        const newCount = Math.min(grouped[catId].new.length, newLimit);
+                        const reviewCount = Math.min(grouped[catId].review.length, reviewLimit);
+                        counts[catId].dueToday = newCount + reviewCount;
+                    });
+
+                    // Now get study sessions from today to count hard ratings
+                    const tx3 = db.transaction(['studySessions'], 'readonly');
+                    const store3 = tx3.objectStore('studySessions');
+                    const sessionIndex = store3.index('studiedAt');
+                    const sessionRange = IDBKeyRange.bound(todayStart, todayEnd);
+                    const req3 = sessionIndex.getAll(sessionRange);
+                    req3.onsuccess = function() {
+                        const sessions = req3.result || [];
+                        sessions.forEach(session => {
+                            if (session.difficulty === 'hard') {
+                                // Find the card's category
+                                const cardId = session.flashcardId;
+                                // We need to look up the card to get its category
+                                const cardTx = db.transaction(['flashcards'], 'readonly');
+                                const cardStore = cardTx.objectStore('flashcards');
+                                const cardReq = cardStore.get(cardId);
+                                cardReq.onsuccess = function() {
+                                    const card = cardReq.result;
+                                    if (card) {
+                                        const key = (card.categoryId === undefined || card.categoryId === null || card.categoryId === '') ? '' : String(card.categoryId);
+                                        if (counts[key]) {
+                                            counts[key].hardToday = (counts[key].hardToday || 0) + 1;
+                                        }
+                                    }
+                                };
+                            }
+                        });
+
+                        // Wait a bit for async card lookups to complete, then return results
+                        setTimeout(() => {
+                            // Convert to array sorted by dueCount desc
+                            const arr = Object.values(counts).sort((a,b) => b.dueCount - a.dueCount || String(a.name).localeCompare(b.name));
+                            callback(arr);
+                        }, 100);
+                    };
+                    req3.onerror = function() {
+                        // If study sessions fail, just return with due counts
+                        const arr = Object.values(counts).sort((a,b) => b.dueCount - a.dueCount || String(a.name).localeCompare(b.name));
+                        callback(arr);
+                    };
                 };
                 req2.onerror = function() { callback(Object.values(counts)); };
             };
@@ -2010,12 +2086,68 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
                 list.forEach(item => {
                     const catId = item.id === undefined || item.id === null ? '' : String(item.id);
-                    // Attempt to load category settings synchronously from DB isn't possible here; instead show global or unknown
-                    // We'll try to read from indexedDB quickly
+                    const totalDue = item.dueCount || 0;
+                    const dueToday = item.dueToday || 0;
+                    const hardToday = item.hardToday || 0;
+                    const categoryName = item.name || 'Uncategorized';
+
+                    // Create the main container
                     const el = document.createElement('div');
-                    el.className = 'flex justify-between items-center';
-                    el.innerHTML = `<div>${escapeHtml(item.name || 'Uncategorized')} <span class="text-xs text-gray-400">(${item.dueCount} due)</span> <span id='limits-${catId}' class='text-xs text-gray-500 ml-2'></span></div>` +
-                        `<div><button class="text-xs text-blue-600 hover:underline" onclick="startCategoryReview('${item.id}')">Review</button></div>`;
+                    el.className = 'flex justify-between items-center p-2 border-b border-gray-200';
+
+                    // Left side: Category name and statistics
+                    const leftDiv = document.createElement('div');
+                    leftDiv.className = 'flex-1';
+
+                    // Category name
+                    const nameDiv = document.createElement('div');
+                    nameDiv.className = 'font-medium text-sm text-gray-900';
+                    nameDiv.textContent = categoryName;
+                    leftDiv.appendChild(nameDiv);
+
+                    // Statistics badges
+                    const statsDiv = document.createElement('div');
+                    statsDiv.className = 'flex items-center gap-2 mt-1';
+
+                    // Due today badge
+                    const dueBadge = document.createElement('span');
+                    dueBadge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800';
+                    dueBadge.textContent = `${dueToday} due today`;
+                    statsDiv.appendChild(dueBadge);
+
+                    // Hard today badge (only if > 0)
+                    if (hardToday > 0) {
+                        const hardBadge = document.createElement('span');
+                        hardBadge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800';
+                        hardBadge.textContent = `${hardToday} need reshown`;
+                        statsDiv.appendChild(hardBadge);
+                    }
+
+                    // Total due text
+                    const totalText = document.createElement('span');
+                    totalText.className = 'text-xs text-gray-500 ml-2';
+                    totalText.textContent = `(${totalDue} total due)`;
+                    statsDiv.appendChild(totalText);
+
+                    // Limits info
+                    const limitsSpan = document.createElement('span');
+                    limitsSpan.id = `limits-${catId}`;
+                    limitsSpan.className = 'text-xs text-gray-500 ml-2';
+                    statsDiv.appendChild(limitsSpan);
+
+                    leftDiv.appendChild(statsDiv);
+                    el.appendChild(leftDiv);
+
+                    // Right side: Review button
+                    const rightDiv = document.createElement('div');
+                    const reviewBtn = document.createElement('button');
+                    reviewBtn.className = 'text-xs text-blue-600 hover:underline disabled:text-gray-400';
+                    reviewBtn.textContent = 'Review';
+                    reviewBtn.onclick = function() { startCategoryReview(item.id); };
+                    reviewBtn.disabled = dueToday === 0;
+                    rightDiv.appendChild(reviewBtn);
+                    el.appendChild(rightDiv);
+
                     panel.appendChild(el);
 
                     // async load category settings if available
