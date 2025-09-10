@@ -560,8 +560,84 @@
             const generated = await generateFlashcardsWithLLM(videoData);
             flashcards = generated || [];
 
-            // Save to DB if available and not already saved
+            // --- Auto-assign best-fit category to all new cards ---
             if (db && flashcards.length > 0) {
+                // 1. Load all categories
+                const categories = await new Promise(res => {
+                    const tx = db.transaction(['categories'], 'readonly');
+                    const store = tx.objectStore('categories');
+                    const req = store.getAll();
+                    req.onsuccess = () => res(req.result || []);
+                    req.onerror = () => res([]);
+                });
+
+                // 2. Try to get best-fit category name using LLM (if available)
+                let bestCategoryId = '';
+                let bestCategoryName = '';
+                let aiCategoryName = '';
+                let aiCategoryConfidence = 0;
+                // Try to use OpenAI/Gemini/Claude if available
+                try {
+                    // Use OpenAI if available
+                    const apiKey = localStorage.getItem('openai_api_key');
+                    if (apiKey && window.fetch) {
+                        // Compose a prompt to ask for the best category name
+                        const prompt = `Given the following transcript and list of categories, which category best fits the content?\nTranscript: ${videoData.transcript?.slice(0, 2000) || ''}\nCategories: ${categories.map(c => c.name).join(', ')}\nRespond with only the best category name, or 'Uncategorized' if unsure.`;
+                        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${apiKey}`
+                            },
+                            body: JSON.stringify({
+                                model: 'gpt-3.5-turbo',
+                                messages: [
+                                    { role: 'system', content: 'You are an expert at classifying educational content into categories.' },
+                                    { role: 'user', content: prompt }
+                                ],
+                                max_tokens: 10,
+                                temperature: 0
+                            })
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            aiCategoryName = (data.choices?.[0]?.message?.content || '').trim();
+                        }
+                    }
+                } catch (e) { /* ignore AI errors, fallback to heuristic */ }
+
+                // 3. Try to match AI category name to existing categories
+                if (aiCategoryName) {
+                    const match = categories.find(cat => cat.name.toLowerCase() === aiCategoryName.toLowerCase());
+                    if (match) {
+                        bestCategoryId = match.id;
+                        bestCategoryName = match.name;
+                        aiCategoryConfidence = 1;
+                    }
+                }
+
+                // 4. If no AI match, use heuristic on first card
+                if (!bestCategoryId && categories.length > 0 && flashcards.length > 0) {
+                    const heuristicId = determineCategoryId(flashcards[0], categories);
+                    if (heuristicId) {
+                        bestCategoryId = heuristicId;
+                        const match = categories.find(cat => cat.id === heuristicId);
+                        bestCategoryName = match ? match.name : '';
+                    }
+                }
+
+                // 5. If still no match, fallback to Uncategorized
+                if (!bestCategoryId) {
+                    bestCategoryId = '';
+                    bestCategoryName = 'Uncategorized';
+                }
+
+                // 6. Assign categoryId to all new flashcards
+                flashcards.forEach(flashcard => {
+                    flashcard.categoryId = bestCategoryId;
+                });
+
+                // 7. Save to DB
                 try {
                     flashcards.forEach(flashcard => {
                         try { saveFlashcard(flashcard, videoData); } catch (e) { console.error('Error saving generated flashcard:', e); }
