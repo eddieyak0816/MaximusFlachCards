@@ -1601,10 +1601,22 @@ Make sure each flashcard tests something specific from the transcript content.`;
         function speakFeedbackText(buttonElement) {
             const feedbackText = buttonElement.getAttribute('data-feedback-text');
             if (feedbackText) {
-                // Use preferred voice with custom rate/pitch for feedback
-                const opts = { rate: 0.9, pitch: 1.0 };
-                const voiceName = getPreferredVoiceName();
-                if (voiceName) opts.voiceName = voiceName;
+                // Use the same voice selection hierarchy as flashcards for feedback
+                let opts;
+                try {
+                    const settingsSel = document.getElementById('settingsVoiceSelect');
+                    const globalSel = document.getElementById('globalVoiceSelect');
+                    const sel = document.getElementById('voiceSelect');
+                    const rateEl = document.getElementById('voiceRate') || document.getElementById('globalVoiceRate') || document.getElementById('settingsVoiceRate');
+                    const pitchEl = document.getElementById('voicePitch') || document.getElementById('globalVoicePitch') || document.getElementById('settingsVoicePitch');
+                    const savedRate = localStorage.getItem('ttsRate');
+                    const savedPitch = localStorage.getItem('ttsPitch');
+                    const rate = rateEl ? Number(rateEl.value) : (savedRate ? Number(savedRate) : 1);
+                    const pitch = pitchEl ? Number(pitchEl.value) : (savedPitch ? Number(savedPitch) : 1);
+                    opts = { rate, pitch };
+                    const voiceValue = (settingsSel && settingsSel.value) ? settingsSel.value : (globalSel && globalSel.value) ? globalSel.value : (sel && sel.value) ? sel.value : (localStorage.getItem('ttsVoice') || '');
+                    if (voiceValue) opts.voiceName = voiceValue;
+                } catch (e) { opts = { rate: 1, pitch: 1 }; }
                 speakTextWithOptions(feedbackText, opts);
             }
         }
@@ -3944,11 +3956,11 @@ Make sure each flashcard tests something specific from the transcript content.`;
             document.getElementById('playSampleBtn').onclick = () => {
                 try {
                     const txt = 'This is a sample voice. Adjust rate and pitch to hear changes.';
-                    // prefer settings controls, fall back to localStorage
-                    const settingsVoice = document.getElementById('settingsVoiceSelect') ? document.getElementById('settingsVoiceSelect').value : (localStorage.getItem('ttsVoice') || '');
+                    // Use the same voice selection hierarchy as flashcards
+                    const voiceName = getPreferredVoiceName();
                     const settingsRate = document.getElementById('settingsVoiceRate') ? Number(document.getElementById('settingsVoiceRate').value) : Number(localStorage.getItem('ttsRate') || 1);
                     const settingsPitch = document.getElementById('settingsVoicePitch') ? Number(document.getElementById('settingsVoicePitch').value) : Number(localStorage.getItem('ttsPitch') || 1);
-                    const opts = { voiceName: settingsVoice, rate: settingsRate, pitch: settingsPitch };
+                    const opts = voiceName ? { voiceName, rate: settingsRate, pitch: settingsPitch } : { rate: settingsRate, pitch: settingsPitch };
                     speakTextWithOptions(txt, opts);
                 } catch (e) { console.error('Play sample failed', e); alert('Could not play sample voice.'); }
             };
@@ -4088,11 +4100,11 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
             // speak the reply and when finished, restart listening if inline conversation
             try {
-                // prefer settings modal values, fall back to localStorage
-                const voiceName = (document.getElementById('settingsVoiceSelect') && document.getElementById('settingsVoiceSelect').value) ? document.getElementById('settingsVoiceSelect').value : (localStorage.getItem('ttsVoice') || '');
+                // Use the same voice selection hierarchy as flashcards
+                const voiceName = getPreferredVoiceName();
                 const rateVal = (document.getElementById('settingsVoiceRate') && document.getElementById('settingsVoiceRate').value) ? Number(document.getElementById('settingsVoiceRate').value) : Number(localStorage.getItem('ttsRate') || 1);
                 const pitchVal = (document.getElementById('settingsVoicePitch') && document.getElementById('settingsVoicePitch').value) ? Number(document.getElementById('settingsVoicePitch').value) : Number(localStorage.getItem('ttsPitch') || 1);
-                const opts = voiceName ? { voiceName, rate: rateVal, pitch: pitchVal } : null;
+                const opts = voiceName ? { voiceName, rate: rateVal, pitch: pitchVal } : { rate: rateVal, pitch: pitchVal };
                 const utter = speakTextWithOptions(aiText, opts);
                 // remember last utterance so it can be cancelled by Stop
                 try { if (modal && typeof modal === 'object') modal._lastUtterance = utter; } catch (e) {}
