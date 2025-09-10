@@ -3,6 +3,10 @@
 This file tracks planned features, improvements, and bugs for the Prompt Engineering Learning Lab. Update this list as you add or complete tasks.
 
 ## Planned Tasks
+- [ ] AI-generated audio for spelling cards (auto-generate, cache, allow deletion/recording, attach multiple audio/image files, sample sentence field)
+- [ ] Convert app to Progressive Web App (PWA) for installability/offline use (no app store fees)
+- [ ] Add cloze (fill-in-the-blank) card support (creation, review, UI)
+- [ ] Integrate YouTube transcript extraction API/service (auto-fetch captions, fallback to STT or user summary)
 - [ ] Add password protection for private access
 - [ ] Modularize JavaScript and CSS files
 - [ ] Improve mobile responsiveness
@@ -13,6 +17,41 @@ This file tracks planned features, improvements, and bugs for the Prompt Enginee
 - [ ] Add more subjects and flashcard templates
 
 ## User-requested feature roadmap (saved)
+
+12) AI-Generated Audio for Spelling Cards
+	 - Why: Enable spelling practice with audio, allow custom/AI voices, and attach relevant media.
+	 - Acceptance criteria:
+		 - Audio for spelling words is generated and cached on first use.
+		 - User can delete or replace audio with their own recording.
+		 - Multiple audio/image files can be attached to a card.
+		 - Sample sentence field is available and can be read aloud.
+	 - Dependencies: Web Speech API, IndexedDB for storage, UI for recording/uploading/deleting audio.
+	 - Next steps: Design card schema for media, implement TTS+record UI, add cache logic.
+
+13) Mobile App Without App Store Fees (PWA)
+	 - Why: Allow installable, offline-capable app on any device without app store fees.
+	 - Acceptance criteria:
+		 - App is installable as a PWA on Android/iOS/desktop.
+		 - Works offline for study/review.
+	 - Dependencies: Service Worker, manifest, mobile-friendly UI.
+	 - Next steps: Add manifest, service worker, test install/offline.
+
+14) Cloze (Fill-in-the-Blank) Cards
+	 - Why: Support fill-in-the-blank and spelling practice.
+	 - Acceptance criteria:
+		 - Cards can be created/reviewed in cloze format.
+		 - UI for authoring and reviewing cloze cards.
+	 - Dependencies: Card schema/UI changes.
+	 - Next steps: Design cloze card format, update review logic/UI.
+
+15) YouTube Transcript Extraction API
+	 - Why: Automate transcript fetching for YouTube videos when URL alone fails.
+	 - Acceptance criteria:
+		 - App attempts to fetch captions/transcript via API/service.
+		 - If unavailable, offers to extract audio and use STT.
+		 - Fallback: prompt user to paste summary/key points.
+	 - Dependencies: YouTube Data API, third-party transcript APIs, optional STT API.
+	 - Next steps: Research available APIs, prototype fetch logic, add UI for fallback.
 The list below captures the features you asked for, ordered by logical implementation sequence (each item has acceptance criteria, dependencies, and next steps). We'll use this as the canonical plan to iterate from.
 
 1) Import / Export & Automatic Backup (CSV first, Anki .apkg optional)
