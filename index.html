@@ -3050,6 +3050,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             <div id="cardFront" class="card-side">
                                 <div class="text-lg font-semibold text-gray-800 mb-4">Fill in the blank(s):</div>
                                 <div class="mb-4 text-lg">${clozeHtml}</div>
+                                <div id="clozeTriesMsg" class="text-xs text-gray-500 mb-2">Attempt 1 of 3</div>
                                 <div class="mb-3">
                                     <button id="checkClozeAnswer" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">Check Answer</button>
                                 </div>
@@ -3080,6 +3081,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     let correct = 0;
                     let total = blanks.length;
                     let feedback = '';
+                    clozeTries++;
                     inputs.forEach((inp, i) => {
                         const userAns = inp.value.trim();
                         const correctAns = blanks[i];
@@ -3090,7 +3092,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             inp.style.background = '#fecaca'; // red
                         }
                     });
-                    clozeTries++;
+                    // Update tries message
+                    document.getElementById('clozeTriesMsg').textContent = `Attempt ${clozeTries} of 3`;
                     if (correct === total) {
                         feedback = `<span class='text-green-700 font-semibold'>✅ All correct!</span>`;
                         document.getElementById('clozeRatingBtns').style.display = '';
