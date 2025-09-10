@@ -1351,14 +1351,17 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
         // [Rest of the existing functions remain the same - calculateNextReview, saveFlashcard, etc.]
         
-        // Calculate next review using a simplified SM-2 style algorithm.
-        // First-view behavior: hard -> 5 minutes, medium -> 1 day, easy -> 2 days.
+    // Calculate next review using a simplified SM-2 style algorithm.
+    // Defaults to the 'balanced' pacing preset if none is provided.
+    // First-view behavior: hard -> 5 minutes, medium -> 1 day, easy -> 2 days.
         // Growth rate is intentionally a bit lower than a standard SM-2 curve.
         // Updated: All intervals round up to nearest whole number (user request), except Hard which is always 5m
         // Updated: Easy button starts at 2 days (user request)
         // Accepts difficulty ('easy'|'medium'|'hard') and uses a quality mapping to 0-5.
         // Returns { nextReview, interval (days, may be fractional), easeFactor, repetitions }
         function calculateNextReview(difficulty, previousInterval = 1, easeFactor = 2.5, repetitions = 0, preset = null) {
+            // If no preset provided, default to the 'balanced' pacing preset
+            try { if (!preset) preset = getPresetById('balanced'); } catch(e) { /* ignore */ }
             // Map difficulty to SM-2 quality score (0-5)
             const qualityMap = { easy: 5, medium: 4, hard: 2 };
             const q = qualityMap[difficulty] !== undefined ? qualityMap[difficulty] : 3;
@@ -1394,7 +1397,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
             } else {
                 // Failed recall: schedule short retry (5 minutes) and reset repetitions
                 newReps = 0;
-                interval = Math.ceil(minIntervalDays); // Round up to nearest whole number
+                // Use minIntervalDays (5 minutes) directly so it doesn't round up to 1 day
+                interval = minIntervalDays;
             }
 
             // Update ease factor (EF) per SM-2-like formula but scale down changes
@@ -5566,7 +5570,7 @@ window.sortAllCardsTable = function(col) {
         window._allCardsSort.dir = 'asc';
     }
     // Re-render
-    showAllCards();
+    try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards();
 };
                     // Populate bulk select options
                     const bulkOptions = catList.map(c => `<option value='${c.id}'>${c.name}</option>`).join('');
@@ -5676,7 +5680,7 @@ window.sortAllCardsTable = function(col) {
                 const tx = db.transaction(['flashcards'], 'readwrite');
                 const store = tx.objectStore('flashcards');
                 ids.forEach(id => store.delete(id));
-                tx.oncomplete = function() { showAllCards(); updateLibraryStats(); };
+                tx.oncomplete = function() { try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); updateLibraryStats(); };
             }
 
             // Bulk change category for selected cards
@@ -5701,7 +5705,7 @@ window.sortAllCardsTable = function(col) {
                         store.put(card);
                     };
                 });
-                tx.oncomplete = function() { showAllCards(); };
+                tx.oncomplete = function() { try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); };
             }
 
             // Handle per-row category select change
@@ -5858,7 +5862,7 @@ window.sortAllCardsTable = function(col) {
                     card.nextReview = next.toISOString();
                     store.put(card);
                 };
-                tx.oncomplete = function() { showAllCards(); };
+                tx.oncomplete = function() { try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); };
             }
 
             function cancelDueDate(cardId) {
@@ -6079,7 +6083,7 @@ window.sortAllCardsTable = function(col) {
                     card.nextReview = next.toISOString();
                     store.put(card);
                 };
-                tx.oncomplete = function() { showAllCards(); };
+                tx.oncomplete = function() { try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); };
             } catch (e) { console.error('saveDueDate error', e); }
         }
 
@@ -6234,7 +6238,7 @@ window.sortAllCardsTable = function(col) {
             const tx = db.transaction(['flashcards'], 'readwrite');
             const store = tx.objectStore('flashcards');
             ids.forEach(id => store.delete(id));
-            tx.oncomplete = function() { showAllCards(); updateLibraryStats && updateLibraryStats(); };
+            tx.oncomplete = function() { try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); updateLibraryStats && updateLibraryStats(); };
         }
 
         function bulkChangeCategory() {
@@ -6257,7 +6261,7 @@ window.sortAllCardsTable = function(col) {
                     store.put(card);
                 };
             });
-            tx.oncomplete = function() { showAllCards(); };
+            tx.oncomplete = function() { try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); };
         }
 
         function bulkApplyDueDate() {
@@ -6284,7 +6288,7 @@ window.sortAllCardsTable = function(col) {
                     store.put(card);
                 };
             });
-            tx.oncomplete = function() { showAllCards(); };
+            tx.oncomplete = function() { try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); };
         }
 
         function toggleMasterSelect(master) {
@@ -6351,7 +6355,7 @@ window.sortAllCardsTable = function(col) {
             };
             tx.oncomplete = function() {
                 closeEditModal();
-                showAllCards();
+                try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards();
             };
         }
 
@@ -6365,7 +6369,9 @@ window.sortAllCardsTable = function(col) {
             // Remove row from table
             const modal = document.getElementById('flashcardModal');
             if (modal) {
-                showAllCards(); // Refresh table
+                // Preserve current filter so the table doesn't reset to All after refresh
+                try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {}
+                try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); // Refresh table
             }
         }
 
