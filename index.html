@@ -145,7 +145,9 @@
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
                             <div class="text-2xl font-bold text-orange-600" id="cardsDueToday">0</div>
-                            <div class="text-sm text-gray-600">Due Today</div>
+                            <div class="text-sm text-gray-600">Due in total</div>
+                            <div class="text-lg font-semibold text-orange-500 mt-2" id="cardsWillReview">0</div>
+                            <div class="text-xs text-gray-500">Due today</div>
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
                             <div class="text-2xl font-bold text-green-600" id="cardsStudiedToday">0</div>
@@ -4237,8 +4239,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
             };
             
             // Get cards due today
-            getFlashcardsDueForReview(function(dueCards) {
-                document.getElementById('cardsDueToday').textContent = dueCards.length;
+            getFlashcardsDueForReview(function(result) {
+                document.getElementById('cardsDueToday').textContent = result.totalDue;
+                document.getElementById('cardsWillReview').textContent = result.reviewCards.length;
             });
             
             // Get cards studied today (simplified - just count study sessions today)
@@ -4259,7 +4262,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
         // Get flashcards due for review
         function getFlashcardsDueForReview(callback) {
             if (!db) {
-                callback([]);
+                callback({ totalDue: 0, reviewCards: [] });
                 return;
             }
             // Load categories and global defaults to compute per-category limits
@@ -4316,20 +4319,26 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
                     // Flatten and sort overall by nextReview asc so study order is sensible
                     finalList.sort((a,b) => new Date(a.nextReview) - new Date(b.nextReview));
-                    callback(finalList);
+                    
+                    // Return both total due and limited review cards
+                    callback({ 
+                        totalDue: allDue.length, 
+                        reviewCards: finalList 
+                    });
                 };
 
                 request.onerror = function() {
                     console.error('Error fetching due flashcards:', request.error);
-                    callback([]);
+                    callback({ totalDue: 0, reviewCards: [] });
                 };
             };
-            catStore.getAll().onerror = function() { callback([]); };
+            catStore.getAll().onerror = function() { callback({ totalDue: 0, reviewCards: [] }); };
         }
 
         // Start a review session with due cards
         function startReviewSession() {
-            getFlashcardsDueForReview(function(dueCards) {
+            getFlashcardsDueForReview(function(result) {
+                const dueCards = result.reviewCards;
                 if (dueCards.length === 0) {
                     alert('🎉 No cards due for review right now! Come back later or create new flashcards.');
                     return;
