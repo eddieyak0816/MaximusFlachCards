@@ -2184,62 +2184,49 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const hardToday = item.hardToday || 0;
                     const categoryName = item.name || 'Uncategorized';
 
-                    // Create the main container
+                    // Create the main container (single line)
                     const el = document.createElement('div');
-                    el.className = 'flex justify-between items-center p-2 border-b border-gray-200';
-
-                    // Left side: Category name and statistics
-                    const leftDiv = document.createElement('div');
-                    leftDiv.className = 'flex-1';
+                    el.className = 'flex flex-wrap items-center p-2 border-b border-gray-200 gap-x-4 gap-y-1';
 
                     // Category name
-                    const nameDiv = document.createElement('div');
-                    nameDiv.className = 'font-medium text-sm text-gray-900';
+                    const nameDiv = document.createElement('span');
+                    nameDiv.className = 'font-medium text-sm text-gray-900 min-w-[90px]';
                     nameDiv.textContent = categoryName;
-                    leftDiv.appendChild(nameDiv);
-
-                    // Statistics badges
-                    const statsDiv = document.createElement('div');
-                    statsDiv.className = 'flex items-center gap-2 mt-1';
+                    el.appendChild(nameDiv);
 
                     // Due today badge
                     const dueBadge = document.createElement('span');
                     dueBadge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800';
                     dueBadge.textContent = `${dueToday} due today`;
-                    statsDiv.appendChild(dueBadge);
+                    el.appendChild(dueBadge);
 
                     // Hard today badge (only if > 0)
                     if (hardToday > 0) {
                         const hardBadge = document.createElement('span');
                         hardBadge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800';
                         hardBadge.textContent = `${hardToday} need reshown`;
-                        statsDiv.appendChild(hardBadge);
+                        el.appendChild(hardBadge);
                     }
 
                     // Total due text
                     const totalText = document.createElement('span');
-                    totalText.className = 'text-xs text-gray-500 ml-2';
+                    totalText.className = 'text-xs text-gray-500';
                     totalText.textContent = `(${totalDue} total due)`;
-                    statsDiv.appendChild(totalText);
+                    el.appendChild(totalText);
 
-                    // Limits info
+                    // Limits info (New/day, Rev/day)
                     const limitsSpan = document.createElement('span');
                     limitsSpan.id = `limits-${catId}`;
-                    limitsSpan.className = 'text-xs text-gray-500 ml-2';
-                    statsDiv.appendChild(limitsSpan);
+                    limitsSpan.className = 'text-xs text-gray-500';
+                    el.appendChild(limitsSpan);
 
-                    leftDiv.appendChild(statsDiv);
-                    el.appendChild(leftDiv);
-
-                    // Right side: Review button
-                    const rightDiv = document.createElement('div');
+                    // Review button
                     const reviewBtn = document.createElement('button');
-                    reviewBtn.className = 'text-xs text-blue-600 hover:underline disabled:text-gray-400';
+                    reviewBtn.className = 'ml-2 text-xs text-blue-600 hover:underline disabled:text-gray-400';
                     reviewBtn.textContent = 'Review';
                     reviewBtn.onclick = function() { startCategoryReview(item.id); };
                     reviewBtn.disabled = dueToday === 0;
-                    rightDiv.appendChild(reviewBtn);
-                    el.appendChild(rightDiv);
+                    el.appendChild(reviewBtn);
 
                     panel.appendChild(el);
 
