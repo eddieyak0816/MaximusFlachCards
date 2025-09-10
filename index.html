@@ -3068,11 +3068,13 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                         <div class="text-xs text-gray-500 mt-1">(3)</div>
                                     </div>
                                 </div>
+                                <div id="clozeShowAnswers" class="mt-4 text-base text-blue-900 font-semibold" style="display:none"></div>
                             </div>
                         </div>
                     </div>
                 `;
-                // Add answer checking logic
+                // Add answer checking logic with up to 3 tries
+                let clozeTries = 0;
                 document.getElementById('checkClozeAnswer').onclick = function() {
                     const inputs = container.querySelectorAll('.cloze-blank');
                     let correct = 0;
@@ -3088,16 +3090,25 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             inp.style.background = '#fecaca'; // red
                         }
                     });
+                    clozeTries++;
                     if (correct === total) {
                         feedback = `<span class='text-green-700 font-semibold'>✅ All correct!</span>`;
+                        document.getElementById('clozeRatingBtns').style.display = '';
+                        document.getElementById('checkClozeAnswer').disabled = true;
+                        // Show correct answers
+                        document.getElementById('clozeShowAnswers').innerHTML = `Correct answers: ${blanks.map(b=>`<b>${b}</b>`).join(', ')}`;
+                        document.getElementById('clozeShowAnswers').style.display = '';
+                    } else if (clozeTries < 3) {
+                        feedback = `<span class='text-red-700 font-semibold'>${correct} of ${total} correct. Try again! (${3-clozeTries} tries left)</span>`;
                     } else {
-                        feedback = `<span class='text-red-700 font-semibold'>${correct} of ${total} correct. Answers: ${blanks.map(b=>`<b>${b}</b>`).join(', ')}</span>`;
+                        feedback = `<span class='text-red-700 font-semibold'>${correct} of ${total} correct.</span>`;
+                        document.getElementById('clozeRatingBtns').style.display = '';
+                        document.getElementById('checkClozeAnswer').disabled = true;
+                        // Show correct answers
+                        document.getElementById('clozeShowAnswers').innerHTML = `Correct answers: ${blanks.map(b=>`<b>${b}</b>`).join(', ')}`;
+                        document.getElementById('clozeShowAnswers').style.display = '';
                     }
                     document.getElementById('clozeFeedback').innerHTML = feedback;
-                    // Show rating buttons
-                    document.getElementById('clozeRatingBtns').style.display = '';
-                    // Optionally, disable check button after checking
-                    document.getElementById('checkClozeAnswer').disabled = true;
                 };
             } else {
                 // ...existing code for basic cards...

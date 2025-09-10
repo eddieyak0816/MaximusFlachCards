@@ -5,7 +5,9 @@ This file tracks planned features, improvements, and bugs for the Prompt Enginee
 ## Planned Tasks
 - [ ] AI-generated audio for spelling cards (auto-generate, cache, allow deletion/recording, attach multiple audio/image files, sample sentence field)
 - [ ] Convert app to Progressive Web App (PWA) for installability/offline use (no app store fees)
-- [ ] Add cloze (fill-in-the-blank) card support (creation, review, UI)
+- [x] Add cloze (fill-in-the-blank) card support (creation, review, UI)
+	- [x] Allow 3 tries before rating in cloze review
+	- [x] Show correct answers after rating
 - [ ] Integrate YouTube transcript extraction API/service (auto-fetch captions, fallback to STT or user summary)
 - [ ] Add password protection for private access
 - [ ] Modularize JavaScript and CSS files
