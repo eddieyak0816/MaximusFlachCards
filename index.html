@@ -3080,7 +3080,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                 <div class="flex items-center justify-center mb-4">
                                     <div class="inline-flex items-center gap-3">
                                         <div class="text-lg font-semibold text-gray-800">Fill in the blank(s):</div>
-                                        <button data-play-question class="bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-1 rounded text-sm" data-play-question="${escapeJs(clozeHtml.replace(/<[^>]+>/g,''))}" title="Play question">🔊</button>
+                                        <button class="bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-1 rounded text-sm" data-play-question="${escapeJs(clozeHtml.replace(/<[^>]+>/g,''))}" title="Play question">🔊</button>
                                         <button class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-2 py-1 rounded text-sm" onclick="stopSpeech()" title="Stop">■</button>
                                     </div>
                                 </div>
@@ -3090,22 +3090,16 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                 
                                 <!-- Audio and image row: audio left, image right -->
                                 ${(card.audioFiles && card.audioFiles.length > 0) || (card.imageFiles && card.imageFiles.length > 0) ? `
-                                <div class="mb-3 flex items-start gap-4">
-                                    <div class="flex-1">
-                                        <div class="flex items-center gap-2 mb-2">
-                                            ${card.audioFiles && card.audioFiles.length > 0 ? card.audioFiles.map((file, index) => `
-                                                <audio controls class="w-full uploaded-audio-front" data-uploaded-index="${index}">
-                                                    <source src="${file.data}" type="${file.type}">
-                                                    Your browser does not support the audio element.
-                                                </audio>
-                                            `).join('') : ''}
-                                        </div>
-                                        <div>
-                                            <button data-play-uploaded-front class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm">▶️</button>
-                                            <button data-stop-uploaded-front class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm ml-2">■</button>
-                                        </div>
+                                <div id="frontMediaRow" class="mb-3 flex items-center justify-center gap-4">
+                                    <div class="flex items-center justify-center">
+                                        ${card.audioFiles && card.audioFiles.length > 0 ? card.audioFiles.map((file, index) => `
+                                            <audio controls class="w-48 uploaded-audio-front" data-uploaded-index="${index}">
+                                                <source src="${file.data}" type="${file.type}">
+                                                Your browser does not support the audio element.
+                                            </audio>
+                                        `).join('') : ''}
                                     </div>
-                                    <div style="min-width:96px;max-width:140px;">
+                                    <div class="flex items-center justify-center" style="min-width:64px;max-width:120px;">
                                         ${card.imageFiles && card.imageFiles.length > 0 ? card.imageFiles.map((file, index) => `
                                             <img src="${file.data}" alt="${file.name}" class="max-w-full max-h-32 object-cover rounded border cursor-pointer" onclick="openImageFullSize('${file.data.replace(/'/g,"\'")}')">
                                         `).join('') : ''}
@@ -3193,10 +3187,11 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     <div id="cardContent">
                         <div id="cardFront" class="card-side">
                             <div class="flex items-center justify-center mb-4">
-                                <div class="inline-flex items-center gap-3">
-                                    <div class="text-lg font-semibold text-gray-800">${card.front || ''}</div>
-                                    <button data-play-question class="bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-1 rounded text-sm" data-play-question="${escapeJs(card.front || '')}" title="Play question">🔊</button>
-                                    <button class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-2 py-1 rounded text-sm" onclick="stopSpeech()" title="Stop">■</button>
+                                    <div class="inline-flex items-center gap-3">
+                                        <div class="text-lg font-semibold text-gray-800">${card.front || ''}</div>
+                                        <button class="bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-1 rounded text-sm" data-play-question="${escapeJs(card.front || '')}" title="Play question">🔊</button>
+                                        <button class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-2 py-1 rounded text-sm" onclick="stopSpeech()" title="Stop">■</button>
+                                    </div>
                                 </div>
                             </div>
                             <button id="showHintBtn" class="bg-yellow-200 hover:bg-yellow-300 text-yellow-900 px-3 py-1 rounded text-sm mb-2" style="display:${card.sampleSentence && card.sampleSentence.trim() ? '' : 'none'}">💡 Show Hint</button>
@@ -3204,22 +3199,16 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             
                             <!-- Audio and image row on front (audio left, image right) -->
                             ${(card.audioFiles && card.audioFiles.length > 0) || (card.imageFiles && card.imageFiles.length > 0) ? `
-                            <div class="mb-3 flex items-start gap-4">
-                                <div class="flex-1">
-                                    <div class="flex items-center gap-2 mb-2">
-                                        ${card.audioFiles && card.audioFiles.length > 0 ? card.audioFiles.map((file, index) => `
-                                            <audio controls class="w-full uploaded-audio-back" data-uploaded-index="${index}">
-                                                <source src="${file.data}" type="${file.type}">
-                                                Your browser does not support the audio element.
-                                            </audio>
-                                        `).join('') : ''}
-                                    </div>
-                                    <div>
-                                        <button data-play-uploaded-back class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm">▶️</button>
-                                        <button data-stop-uploaded-back class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm ml-2">■</button>
-                                    </div>
+                            <div id="frontMediaRow" class="mb-3 flex items-center justify-center gap-4">
+                                <div class="flex items-center justify-center">
+                                    ${card.audioFiles && card.audioFiles.length > 0 ? card.audioFiles.map((file, index) => `
+                                        <audio controls class="w-48 uploaded-audio-back" data-uploaded-index="${index}">
+                                            <source src="${file.data}" type="${file.type}">
+                                            Your browser does not support the audio element.
+                                        </audio>
+                                    `).join('') : ''}
                                 </div>
-                                <div style="min-width:96px;max-width:140px;">
+                                <div class="flex items-center justify-center" style="min-width:64px;max-width:120px;">
                                     ${card.imageFiles && card.imageFiles.length > 0 ? card.imageFiles.map((file, index) => `
                                         <img src="${file.data}" alt="${file.name}" class="max-w-full max-h-32 object-cover rounded border cursor-pointer" onclick="openImageFullSize('${file.data.replace(/'/g,"\'")}')">
                                     `).join('') : ''}
@@ -3227,49 +3216,32 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             </div>
                             ` : ''}
                             
-                            <div class="mb-3">
-                                <button data-play-question="${escapeJs(card.front || '')}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Question</button>
-                                <button data-stop-audio class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
-                            </div>
+                            <!-- Play Question/Stop removed; browser audio controls shown above -->
                             <!-- voice controls moved to Step 1 global settings -->
                             <div>
-                                <button onclick="flipCard()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">Show Answer</button>
+                                <button id="showAnswerBtn" onclick="flipCard()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">Show Answer</button>
                             </div>
                         </div>
                         <div id="cardBack" class="card-side hidden">
-                            <div class="text-lg font-semibold text-gray-800 mb-4">${card.back || ''}</div>
-                            
-                            <!-- Display uploaded audio files on back -->
-                            ${card.audioFiles && card.audioFiles.length > 0 ? `
-                            <div class="mb-3">
-                                <div class="flex flex-wrap gap-2">
-                                    ${card.audioFiles.map((file, index) => `
-                                        <audio controls class="max-w-xs">
+                            <div class="text-lg font-semibold text-gray-800 mb-4" style="margin-top:0;">${card.back || ''}</div>
+                            ${(card.audioFiles && card.audioFiles.length > 0) || (card.imageFiles && card.imageFiles.length > 0) ? `
+                            <!-- Inline audio (left) and image (right) on back, matching front -->
+                            <div class="mb-3 flex items-center justify-center gap-4">
+                                <div class="flex items-center justify-center">
+                                    ${card.audioFiles && card.audioFiles.length > 0 ? card.audioFiles.map((file, index) => `
+                                        <audio controls class="w-48 uploaded-audio-back" data-uploaded-index="${index}">
                                             <source src="${file.data}" type="${file.type}">
                                             Your browser does not support the audio element.
                                         </audio>
-                                    `).join('')}
+                                    `).join('') : ''}
+                                </div>
+                                <div class="flex items-center justify-center" style="min-width:64px;max-width:120px;">
+                                    ${card.imageFiles && card.imageFiles.length > 0 ? card.imageFiles.map((file, index) => `
+                                        <img src="${file.data}" alt="${file.name}" class="max-w-full max-h-32 object-cover rounded border cursor-pointer" onclick="openImageFullSize('${file.data.replace(/'/g,"\'")}')">
+                                    `).join('') : ''}
                                 </div>
                             </div>
                             ` : ''}
-                            
-                            <!-- Display uploaded image files on back -->
-                            ${card.imageFiles && card.imageFiles.length > 0 ? `
-                            <div class="mb-3">
-                                <div class="text-sm text-gray-600 mb-2">🖼️ Uploaded Images:</div>
-                                <div class="flex flex-wrap gap-2">
-                                    ${card.imageFiles.map((file, index) => `
-                                        <img src="${file.data}" alt="${file.name}" class="max-w-32 max-h-32 object-cover rounded border">
-                                    `).join('')}
-                                </div>
-                            </div>
-                            ` : ''}
-                            
-                            <div class="mb-3">
-                                <button data-play-answer="${escapeJs(card.back || '')}" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-sm mr-2">🔊 Play Answer</button>
-                                <button data-play-qa data-play-qa-q="${escapeJs(card.front || '')}" data-play-qa-a="${escapeJs(card.back || '')}" class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded text-sm mr-2">🔁 Play Q→A</button>
-                                <button data-stop-audio class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm">■ Stop</button>
-                            </div>
                             <!-- voice controls moved to Step 1 global settings -->
                             <div class="flex justify-center space-x-6 mt-4">
                                 <div class="flex flex-col items-center">
@@ -5030,17 +5002,35 @@ Make sure each flashcard tests something specific from the transcript content.`;
         function flipCard() {
             const front = document.getElementById('cardFront');
             const back = document.getElementById('cardBack');
-            
-            front.classList.add('hidden');
-            back.classList.remove('hidden');
+            // hide front and show back (use class toggles for reliability)
+            try {
+                if (front) front.classList.add('hidden');
+                if (back) back.classList.remove('hidden');
+            } catch (e) { /* ignore */ }
+            // hide front's Show Answer button and front media to avoid duplicates on back
+            try {
+                const showBtn = document.getElementById('showAnswerBtn');
+                if (showBtn) showBtn.style.display = 'none';
+                const mediaRow = document.getElementById('frontMediaRow');
+                if (mediaRow) mediaRow.style.display = 'none';
+            } catch (e) { /* ignore */ }
         }
 
         function flipCardBack() {
             const front = document.getElementById('cardFront');
             const back = document.getElementById('cardBack');
-            
-            back.classList.add('hidden');
-            front.classList.remove('hidden');
+            // show front and hide back (use class toggles for reliability)
+            try {
+                if (back) back.classList.add('hidden');
+                if (front) front.classList.remove('hidden');
+            } catch (e) { /* ignore */ }
+            // restore front Show Answer button and media display
+            try {
+                const showBtn = document.getElementById('showAnswerBtn');
+                if (showBtn) showBtn.style.display = '';
+                const mediaRow = document.getElementById('frontMediaRow');
+                if (mediaRow) mediaRow.style.display = '';
+            } catch (e) { /* ignore */ }
         }
 
         function rateCard(difficulty) {
