@@ -1354,6 +1354,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
         // Calculate next review using a simplified SM-2 style algorithm.
         // First-view behavior: hard -> 5 minutes, medium -> 1 day, easy -> 2 days.
         // Growth rate is intentionally a bit lower than a standard SM-2 curve.
+        // Updated: All intervals round up to nearest whole number (user request), except Hard which is always 5m
+        // Updated: Easy button starts at 2 days (user request)
         // Accepts difficulty ('easy'|'medium'|'hard') and uses a quality mapping to 0-5.
         // Returns { nextReview, interval (days, may be fractional), easeFactor, repetitions }
         function calculateNextReview(difficulty, previousInterval = 1, easeFactor = 2.5, repetitions = 0, preset = null) {
@@ -1368,11 +1370,15 @@ Make sure each flashcard tests something specific from the transcript content.`;
             // minimum interval in days (5 minutes)
             const minIntervalDays = 5 / 1440; // 5 minutes
 
-            if (q >= 3) {
+            if (difficulty === 'hard') {
+                // Hard button: ALWAYS 5 minutes, no rounding up
+                interval = minIntervalDays;
+                newReps = 0; // Reset repetitions on hard
+            } else if (q >= 3) {
                 // Successful response
                 if (newReps === 0) {
-                    // First successful recall after first view - use initial interval from preset or default
-                    interval = (preset && preset.initialInterval) ? preset.initialInterval : 1;
+                    // First successful recall after first view - use initial interval from preset or default (now 2 days)
+                    interval = Math.ceil((preset && preset.initialInterval) ? preset.initialInterval : 2);
                 } else {
                     // Use forgetting curve multipliers from preset
                     if (difficulty === 'easy' && preset && preset.easyMultiplier) {
@@ -1388,7 +1394,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             } else {
                 // Failed recall: schedule short retry (5 minutes) and reset repetitions
                 newReps = 0;
-                interval = minIntervalDays;
+                interval = Math.ceil(minIntervalDays); // Round up to nearest whole number
             }
 
             // Update ease factor (EF) per SM-2-like formula but scale down changes
@@ -1793,6 +1799,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
         }
 
         // Pacing presets based on forgetting curve principles with different growth rates
+        // Updated: initialInterval set to 2 days for Easy button default (user request)
         function getPacingPresets() {
             const raw = localStorage.getItem('pacingPresets');
             if (raw) {
@@ -1800,9 +1807,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
             }
             // default presets based on forgetting curve principles
             return [
-                { id: 'conservative', name: 'Conservative', initialInterval: 1, easyMultiplier: 1.5, mediumMultiplier: 1.25, easeFactor: 2.6 },
-                { id: 'balanced', name: 'Balanced', initialInterval: 1, easyMultiplier: 2.0, mediumMultiplier: 1.5, easeFactor: 2.4 },
-                { id: 'aggressive', name: 'Aggressive', initialInterval: 1, easyMultiplier: 2.5, mediumMultiplier: 1.75, easeFactor: 2.2 }
+                { id: 'conservative', name: 'Conservative', initialInterval: 2, easyMultiplier: 1.5, mediumMultiplier: 1.25, easeFactor: 2.6 },
+                { id: 'balanced', name: 'Balanced', initialInterval: 2, easyMultiplier: 2.0, mediumMultiplier: 1.5, easeFactor: 2.4 },
+                { id: 'aggressive', name: 'Aggressive', initialInterval: 2, easyMultiplier: 2.5, mediumMultiplier: 1.75, easeFactor: 2.2 }
             ];
         }
 
