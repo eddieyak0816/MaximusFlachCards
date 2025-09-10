@@ -1470,6 +1470,48 @@ Make sure each flashcard tests something specific from the transcript content.`;
             return String(str).replace(/[\u{1F300}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1F1E6}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
         }
 
+        // --- Shared TTS helpers: consistent preprocessing and preferred voice selection ---
+        function preprocessTTS(str) {
+            if (!str) return '';
+            let s = String(str);
+            // Normalize smart single/double quotes to ASCII equivalents
+            s = s.replace(/[\u2018\u2019]/g, "'");
+            s = s.replace(/[\u201C\u201D]/g, '"');
+            // Replace symbols that TTS tends to read aloud as words, but keep grammar punctuation (. , ! ? ; : ')
+            s = s.replace(/[#$%&()*+\-;<=>@[\\\]^_`{|}~]/g, ' ');
+            // Normalize ampersand, at, percent, dollar
+            s = s.replace(/&/g, ' and ').replace(/@/g, ' at ').replace(/%/g, ' percent ').replace(/\$/g, ' dollars ');
+            // Replace double quotes with a small pause so TTS doesn't read the word "quote"
+            s = s.replace(/\"/g, ', ');
+            // Remove exotic dash/ellipsis/bullets
+            s = s.replace(/—/g, ' ').replace(/–/g, ' ').replace(/…/g, ' ').replace(/•/g, ' ');
+            // Remove slashes, pipes, brackets and braces
+            s = s.replace(/[\|\\/\[\]\(\)\{\}<>]/g, ' ');
+            // Collapse whitespace
+            s = s.replace(/\s+/g, ' ').trim();
+            return s;
+        }
+
+        function getPreferredVoiceName() {
+            try {
+                const settingsSel = document.getElementById('settingsVoiceSelect');
+                const globalSel = document.getElementById('globalVoiceSelect');
+                const sel = document.getElementById('voiceSelect');
+                return (settingsSel && settingsSel.value) ? settingsSel.value : (globalSel && globalSel.value) ? globalSel.value : (sel && sel.value) ? sel.value : (localStorage.getItem('ttsVoice') || '');
+            } catch (e) { return localStorage.getItem('ttsVoice') || ''; }
+        }
+
+        function applyPreferredVoiceToUtterance(utter) {
+            try {
+                const voiceName = getPreferredVoiceName();
+                if (voiceName && window.speechSynthesis && window.speechSynthesis.getVoices) {
+                    const voices = window.speechSynthesis.getVoices() || [];
+                    const found = voices.find(v => v.name === voiceName || (v.name + ' (' + v.lang + ')') === voiceName);
+                    if (found) utter.voice = found;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
         function speakTextWithOptions(text, opts) {
             if (!text || !text.trim()) return;
             if (!('speechSynthesis' in window)) {
@@ -1478,41 +1520,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
             }
             stopSpeech();
 
-            // Comprehensive text preprocessing to remove punctuation that TTS reads aloud
-            let processedText = String(text);
+            const processedText = preprocessTTS(text);
             console.log('Original text:', text);
-
-            // Remove punctuation that TTS reads aloud as words/symbols, but keep grammar punctuation
-            processedText = processedText.replace(/[#$%&()*+\-;<=>@[\\\]^_`{|}~]/g, ' ');
-
-            // Handle special characters and symbols that TTS might mispronounce
-            processedText = processedText.replace(/[""]/g, '');  // Double quotes
-            // Keep apostrophes for contractions like "Let's", "That's", etc.
-            processedText = processedText.replace(/—/g, ' ');     // Em dash
-            processedText = processedText.replace(/–/g, ' ');     // En dash
-            processedText = processedText.replace(/…/g, ' ');     // Ellipsis
-            processedText = processedText.replace(/•/g, ' ');     // Bullet points
-            processedText = processedText.replace(/\|/g, ' ');    // Pipe
-            processedText = processedText.replace(/\//g, ' ');    // Forward slash
-            processedText = processedText.replace(/\\/g, ' ');    // Backslash
-            processedText = processedText.replace(/\[/g, ' ');    // Left bracket
-            processedText = processedText.replace(/\]/g, ' ');    // Right bracket
-            processedText = processedText.replace(/\{/g, ' ');    // Left brace
-            processedText = processedText.replace(/\}/g, ' ');    // Right brace
-            processedText = processedText.replace(/</g, ' ');     // Less than
-            processedText = processedText.replace(/>/g, ' ');     // Greater than
-            processedText = processedText.replace(/=/g, ' ');     // Equals
-            processedText = processedText.replace(/\+/g, ' ');    // Plus
-            processedText = processedText.replace(/\*/g, ' ');    // Asterisk
-            processedText = processedText.replace(/&/g, ' and '); // Ampersand
-            processedText = processedText.replace(/@/g, ' at ');  // At symbol
-            processedText = processedText.replace(/#/g, ' ');     // Hash
-            processedText = processedText.replace(/%/g, ' percent '); // Percent
-            processedText = processedText.replace(/\$/g, ' dollars '); // Dollar sign
-
-            // Handle multiple spaces and clean up
-            processedText = processedText.replace(/\s+/g, ' ').trim();
-
             console.log('Processed text:', processedText);
 
             const utter = new SpeechSynthesisUtterance(processedText);
@@ -1540,14 +1549,15 @@ Make sure each flashcard tests something specific from the transcript content.`;
             utter.pitch = (opts && opts.pitch) ? opts.pitch : 1;
             utter.lang = (opts && opts.lang) ? opts.lang : (navigator.language || 'en-US');
 
-            // Try to set specific voice by name
-            try {
-                if (opts && opts.voiceName && window.speechSynthesis && window.speechSynthesis.getVoices) {
-                    const voices = window.speechSynthesis.getVoices() || [];
-                    const found = voices.find(v => v.name === opts.voiceName || (v.name + ' (' + v.lang + ')') === opts.voiceName);
-                    if (found) utter.voice = found;
-                }
-            } catch (e) { /* ignore */ }
+            // Apply preferred voice (from settings/global/per-card/localStorage)
+            try { if (opts && opts.voiceName) {
+                // prefer opts.voiceName if explicitly passed
+                const voices = window.speechSynthesis.getVoices() || [];
+                const found = voices.find(v => v.name === opts.voiceName || (v.name + ' (' + v.lang + ')') === opts.voiceName);
+                if (found) utter.voice = found;
+            } else {
+                applyPreferredVoiceToUtterance(utter);
+            } } catch (e) { /* ignore */ }
 
             window.speechSynthesis.speak(utter);
             return utter;
@@ -1559,44 +1569,17 @@ Make sure each flashcard tests something specific from the transcript content.`;
             if (!('speechSynthesis' in window)) { alert('TTS not supported in this browser'); return; }
             stopSpeech();
 
-            // Comprehensive text preprocessing for front text (keep apostrophes for contractions)
-            let processedFront = String(front || '');
-            processedFront = processedFront.replace(/[#$%&()*+\-;<=>@[\\\]^_`{|}~]/g, ' ');
-            processedFront = processedFront.replace(/[""]/g, '');
-            // Keep apostrophes for contractions like "Let's", "That's", etc.
-            processedFront = processedFront.replace(/—/g, ' ').replace(/–/g, ' ');
-            processedFront = processedFront.replace(/…/g, ' ');
-            processedFront = processedFront.replace(/•/g, ' ');
-            processedFront = processedFront.replace(/;/g, ' ').replace(/:/g, ' ');
-            processedFront = processedFront.replace(/\(/g, ' ').replace(/\)/g, ' ');
-            processedFront = processedFront.replace(/\[/g, ' ').replace(/\]/g, ' ');
-            processedFront = processedFront.replace(/\{/g, ' ').replace(/\}/g, ' ');
-            processedFront = processedFront.replace(/&/g, ' and ').replace(/%/g, ' percent ').replace(/\$/g, ' dollars ');
-            processedFront = processedFront.replace(/\s+/g, ' ').trim();
-
-            const first = new SpeechSynthesisUtterance(processedFront);
-            first.rate = 1;
-            first.pitch = 1;
-            first.lang = navigator.language || 'en-US';
+        const processedFront = preprocessTTS(front || '');
+        const first = new SpeechSynthesisUtterance(processedFront);
+        first.rate = 1; first.pitch = 1; first.lang = navigator.language || 'en-US';
+        try { applyPreferredVoiceToUtterance(first); } catch (e) { /* ignore */ }
             first.onend = function() {
                 if (back && back.trim()) {
-                    let processedBack = String(back);
-                    processedBack = processedBack.replace(/[#$%&()*+\-;<=>@[\\\]^_`{|}~]/g, ' ');
-                    processedBack = processedBack.replace(/[""]/g, '');
-                    // Keep apostrophes for contractions like "Let's", "That's", etc.
-                    processedBack = processedBack.replace(/—/g, ' ').replace(/–/g, ' ');
-                    processedBack = processedBack.replace(/…/g, ' ');
-                    processedBack = processedBack.replace(/•/g, ' ');
-                    processedBack = processedBack.replace(/;/g, ' ').replace(/:/g, ' ');
-                    processedBack = processedBack.replace(/\(/g, ' ').replace(/\)/g, ' ');
-                    processedBack = processedBack.replace(/\[/g, ' ').replace(/\]/g, ' ');
-                    processedBack = processedBack.replace(/\{/g, ' ').replace(/\}/g, ' ');
-                    processedBack = processedBack.replace(/&/g, ' and ').replace(/%/g, ' percent ').replace(/\$/g, ' dollars ');
-                    processedBack = processedBack.replace(/\s+/g, ' ').trim();
-
-                    const second = new SpeechSynthesisUtterance(processedBack);
-                    second.rate = 1; second.pitch = 1; second.lang = navigator.language || 'en-US';
-                    window.speechSynthesis.speak(second);
+            const processedBack = preprocessTTS(back || '');
+            const second = new SpeechSynthesisUtterance(processedBack);
+            second.rate = 1; second.pitch = 1; second.lang = navigator.language || 'en-US';
+            try { applyPreferredVoiceToUtterance(second); } catch (e) { /* ignore */ }
+            window.speechSynthesis.speak(second);
                 }
             };
             window.speechSynthesis.speak(first);
@@ -1616,7 +1599,14 @@ Make sure each flashcard tests something specific from the transcript content.`;
         // Escape string for embedding inside backtick template literal in HTML attributes
         function escapeJs(str) {
             if (str === undefined || str === null) return '';
-            return String(str).replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+            return String(str)
+                .replace(/\\/g, '\\\\')
+                .replace(/`/g, '\\`')
+                .replace(/\$/g, '\\$')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
         }
 
 
@@ -3409,19 +3399,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 // wait briefly for voices to appear
                 const voices = await ensureVoicesLoaded(2000);
                 // create a near-silent utterance to prime audio and voices
-                let sampleText = 'Initializing voice features.';
-                sampleText = sampleText.replace(/[#$%&()*+\-;<=>@[\\\]^_`{|}~]/g, ' ');
-                sampleText = sampleText.replace(/[""]/g, '');
-                // Keep apostrophes for contractions like "Let's", "That's", etc.
-                sampleText = sampleText.replace(/—/g, ' ').replace(/–/g, ' ');
-                sampleText = sampleText.replace(/…/g, ' ');
-                sampleText = sampleText.replace(/•/g, ' ');
-                sampleText = sampleText.replace(/;/g, ' ').replace(/:/g, ' ');
-                sampleText = sampleText.replace(/\(/g, ' ').replace(/\)/g, ' ');
-                sampleText = sampleText.replace(/\[/g, ' ').replace(/\]/g, ' ');
-                sampleText = sampleText.replace(/\{/g, ' ').replace(/\}/g, ' ');
-                sampleText = sampleText.replace(/&/g, ' and ').replace(/%/g, ' percent ').replace(/\$/g, ' dollars ');
-                sampleText = sampleText.replace(/\s+/g, ' ').trim();
+                let sampleText = preprocessTTS('Initializing voice features.');
 
                 const u = new SpeechSynthesisUtterance(sampleText);
                 u.rate = 1; u.pitch = 1; u.lang = navigator.language || 'en-US';
@@ -4351,6 +4329,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             <label style='font-size:0.9rem;color:#4a5568;'>Filter:</label>
                             <select id='filterCategorySelect' onchange='applyTableFilters()' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;font-size:0.9rem;height:30px;'>
                                 <option value='__all__'>All categories</option>
+                                <option value='__uncat__'>Uncategorized</option>
                                 ${catList.map(c=>`<option value='${c.id}'>${c.name}</option>`).join('')}
                             </select>
                             <label style='font-size:0.9rem;color:#4a5568;margin-left:6px;'>Search:</label>
@@ -4936,7 +4915,12 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     let visible = true;
                     // Category filter
                     if (catVal && catVal !== '__all__') {
-                        visible = (String(cat) === String(catVal));
+                        if (catVal === '__uncat__') {
+                            // treat empty or missing category as uncategorized
+                            visible = (cat === '' || cat === null || typeof cat === 'undefined');
+                        } else {
+                            visible = (String(cat) === String(catVal));
+                        }
                     }
                     // Keyword filter
                     if (visible && keyword) {
