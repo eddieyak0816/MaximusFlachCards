@@ -560,6 +560,43 @@
             const generated = await generateFlashcardsWithLLM(videoData);
             flashcards = generated || [];
 
+            // Ensure each generated card has three progressive hints (subtle -> clearer -> specific)
+            if (flashcards && flashcards.length > 0) {
+                for (let i = 0; i < flashcards.length; i++) {
+                    try {
+                        const card = flashcards[i] || {};
+                        // determine front/back text for hint generation
+                        const frontText = card.type === 'cloze' ? (card.clozeText || '') : (card.front || '');
+                        const backText = card.type === 'cloze' ? '' : (card.back || '');
+                        // If hints are missing or incomplete, generate them
+                        if (!card.hints || !Array.isArray(card.hints) || card.hints.length < 3 || !(card.hints[0] && card.hints[1] && card.hints[2])) {
+                            try {
+                                const hints = await generateHints((frontText||'').trim(), (backText||'').trim());
+                                if (Array.isArray(hints) && hints.length > 0) {
+                                    card.hints = hints.slice(0,3);
+                                    // set sampleSentence from first hint if not present
+                                    if (!card.sampleSentence || String(card.sampleSentence).trim() === '') card.sampleSentence = (hints[0] || '').trim();
+                                }
+                            } catch (e) {
+                                console.warn('generateHints failed for generated card', e);
+                                // fallback: create a single short hint
+                                try {
+                                    const one = await generateHintText((frontText||'').trim(), (backText||'').trim());
+                                    card.hints = [one || '', '', ''];
+                                    if (!card.sampleSentence || String(card.sampleSentence).trim() === '') card.sampleSentence = one || '';
+                                } catch (err) {
+                                    card.hints = card.hints || ['', '', ''];
+                                }
+                            }
+                        }
+                        // normalize hints array length to 3
+                        if (!card.hints || !Array.isArray(card.hints)) card.hints = ['', '', ''];
+                        while (card.hints.length < 3) card.hints.push('');
+                        flashcards[i] = card;
+                    } catch (e) { console.error('Error ensuring hints for card', e); }
+                }
+            }
+
             // --- Auto-assign best-fit category to all new cards ---
             if (db && flashcards.length > 0) {
                 // 1. Load all categories
@@ -1491,6 +1528,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 const flashcardData0 = {
                     front: flashcard.front || '',
                     back: flashcard.back || '',
+                    hints: flashcard.hints || [],
+                    sampleSentence: flashcard.sampleSentence || '',
                     videoTitle: videoData.title,
                     videoUrl: videoData.url,
                     subject: videoData.subject,
@@ -1525,6 +1564,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 const flashcardData = {
                     front: sanitizedFront,
                     back: sanitizedBack,
+                    hints: flashcard.hints || [],
+                    sampleSentence: flashcard.sampleSentence || '',
                     videoTitle: videoData.title,
                     videoUrl: videoData.url,
                     subject: videoData.subject,
@@ -1549,6 +1590,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 const flashcardData = {
                     front: flashcard.front,
                     back: flashcard.back,
+                    hints: flashcard.hints || [],
+                    sampleSentence: flashcard.sampleSentence || '',
                     videoTitle: videoData.title,
                     videoUrl: videoData.url,
                     subject: videoData.subject,
@@ -2610,42 +2653,25 @@ Make sure each flashcard tests something specific from the transcript content.`;
         }
 
         function generateRecallQuestions() {
-            const questions = [
-                {
-                    type: 'open',
-                    question: `Tell me everything you can remember about the video. Don't worry about being perfect - just write down whatever comes to mind!`,
-                    placeholder: 'Start typing everything you remember...'
-                },
-                {
-                    type: 'specific',
-                    question: 'What was the main point or key takeaway from the video?',
-                    placeholder: 'The main point was...'
-                },
-                {
-                    type: 'details',
-                    question: 'Can you remember any specific examples, numbers, or details that were mentioned?',
-                    placeholder: 'I remember these specific details...'
-                },
-                {
-                    type: 'connection',
-                    question: 'How does this connect to what you already knew about the topic?',
-                    placeholder: 'This connects to my existing knowledge because...'
-                }
-            ];
+            // Single-question active recall: use the original open prompt (tell me everything you remember)
+            const q = {
+                type: 'open',
+                question: `Tell me everything you can remember about the video. Don't worry about being perfect - just write down whatever comes to mind!`,
+                placeholder: 'Start typing everything you remember...'
+            };
 
             const container = document.getElementById('recallQuestions');
-            container.innerHTML = questions.map((q, index) => `
+            container.innerHTML = `
                 <div class="bg-gray-50 p-4 rounded-lg">
-                    <h4 class="font-semibold text-gray-800 mb-2">${index + 1}. ${q.question}</h4>
-                    <textarea id="recall${index}" placeholder="${q.placeholder}" 
+                    <h4 class="font-semibold text-gray-800 mb-2">1. ${q.question}</h4>
+                    <textarea id="recall0" placeholder="${q.placeholder}" 
                               class="w-full h-24 px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                               oninput="saveRecallData()"></textarea>
-                    <div id="feedback${index}" class="mt-2 hidden"></div>
+                    <div id="feedback0" class="mt-2 hidden"></div>
                     <div class="mt-2">
-                        <button data-recall-index="${index}" class="ai-recall-chat text-sm text-indigo-600 hover:underline">💬 Chat with AI about this question</button>
+                        <button data-recall-index="0" class="ai-recall-chat text-sm text-indigo-600 hover:underline">💬 Chat with AI about this question</button>
                     </div>
                 </div>
-            `).join('') + `
                 <button id="growthFeedbackButton" onclick="analyzeRecallAnswers()" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors mb-4">
                     Get My Growth Feedback! 🌱
                 </button>
@@ -2653,17 +2679,14 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     Ready for Prompt Engineering! 🚀
                 </button>
             `;
-            // Bind click handlers for the newly rendered chat buttons (avoid inline onclick issues)
+            // Bind click handlers for the newly rendered chat button
             populateRecallChatButtons();
         }
 
         // Return the recall question text by index (kept in one place so chat can reference it)
         function getRecallQuestionText(index) {
             const questions = [
-                `Tell me everything you can remember about the video. Don't worry about being perfect - just write down whatever comes to mind!`,
-                'What was the main point or key takeaway from the video?',
-                'Can you remember any specific examples, numbers, or details that were mentioned?',
-                'How does this connect to what you already knew about the topic?'
+                `Tell me everything you can remember about the video. Don't worry about being perfect - just write down whatever comes to mind!`
             ];
             return (typeof index === 'number' && index >= 0 && index < questions.length) ? questions[index] : '';
         }
@@ -2671,12 +2694,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
         function saveRecallData() {
             // Save recall responses as user types
             const responses = [];
-            for (let i = 0; i < 4; i++) {
-                const element = document.getElementById(`recall${i}`);
-                if (element) {
-                    responses[i] = element.value;
-                }
-            }
+            const element = document.getElementById('recall0');
+            responses[0] = element ? element.value : '';
             videoData.recallResponses = responses;
         }
 
@@ -2685,10 +2704,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
             console.log('🚀 analyzeRecallAnswers called!');
             
             const responses = [];
-            for (let i = 0; i < 4; i++) {
-                const response = document.getElementById(`recall${i}`).value.trim();
-                responses.push(response);
-            }
+            const r0 = document.getElementById('recall0');
+            responses.push(r0 ? r0.value.trim() : '');
 
             console.log('User responses:', responses);
             console.log('Video data:', videoData);
@@ -2724,61 +2741,55 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     displayFlashcardPreview(flashcards);
                 }
 
-                // Now provide AI feedback for each answer
+                // Now provide AI feedback for the single answer
                 analyzeButton.innerHTML = '🤖 AI is analyzing your responses vs transcript... ⏳';
+                const i = 0;
+                const feedbackDiv = document.getElementById(`feedback0`);
+                const response = responses[0];
+                // Initialize per-question hint click count container
+                if (!videoData._hintClicks) videoData._hintClicks = [0];
+                // Increment click count for overall analyze action (treat this as one request)
+                videoData._hintClicks[0] = (videoData._hintClicks[0] || 0) + 1;
+                const hintLevel = Math.min(3, videoData._hintClicks[0]); // 1..3
                 
-                // Provide growth mindset feedback for each answer
-                for (let i = 0; i < 4; i++) {
-                    const feedbackDiv = document.getElementById(`feedback${i}`);
-                    const response = responses[i];
-                    // Initialize per-question hint click count container
-                    if (!videoData._hintClicks) videoData._hintClicks = [0,0,0,0];
-                    // Increment click count for overall analyze action (treat this as one request)
-                    videoData._hintClicks[i] = (videoData._hintClicks[i] || 0) + 1;
-                    const hintLevel = Math.min(3, videoData._hintClicks[i]); // 1..3
-                    
-                    console.log(`Generating feedback for question ${i}:`, response);
-                    
-                    // Show loading for this feedback
-                    feedbackDiv.innerHTML = `
-                        <div class="bg-gray-50 border-l-4 border-gray-400 p-4 rounded">
-                            <div class="flex items-center">
-                                <div class="text-2xl mr-3 pulse-animation">🤖</div>
-                                <div>
-                                    <h4 class="font-semibold text-gray-800">AI is comparing your answer to the transcript...</h4>
-                                    <p class="text-gray-600 text-sm">Analyzing what you remembered vs what was actually said</p>
-                                </div>
+                console.log(`Generating feedback for question ${i}:`, response);
+                
+                // Show loading for this feedback
+                feedbackDiv.innerHTML = `
+                    <div class="bg-gray-50 border-l-4 border-gray-400 p-4 rounded">
+                        <div class="flex items-center">
+                            <div class="text-2xl mr-3 pulse-animation">🤖</div>
+                            <div>
+                                <h4 class="font-semibold text-gray-800">AI is comparing your answer to the transcript...</h4>
+                                <p class="text-gray-600 text-sm">Analyzing what you remembered vs what was actually said</p>
                             </div>
                         </div>
-                    `;
-                    feedbackDiv.classList.remove('hidden');
-                    
-                    // Generate REAL AI feedback that compares to transcript and tailors hints by hintLevel
-                    const feedback = await generateRealAIFeedback(i, response, videoData, hintLevel);
-                    feedbackDiv.innerHTML = feedback;
+                    </div>
+                `;
+                feedbackDiv.classList.remove('hidden');
+                
+                // Generate REAL AI feedback that compares to transcript and tailors hints by hintLevel
+                const feedback = await generateRealAIFeedback(0, response, videoData, hintLevel);
+                feedbackDiv.innerHTML = feedback;
 
-                    // Track attempts: increment per-question attempt count
-                    if (!videoData._attempts) videoData._attempts = [0,0,0,0];
-                    videoData._attempts[i] = (videoData._attempts[i] || 0) + 1;
-                    const attemptCount = videoData._attempts[i];
+                // Track attempts: increment per-question attempt count
+                if (!videoData._attempts) videoData._attempts = [0];
+                videoData._attempts[0] = (videoData._attempts[0] || 0) + 1;
+                const attemptCount = videoData._attempts[0];
 
-                    // Show Reveal button only after third hint (hintLevel 3) OR after second attempt
-                    if (hintLevel >= 3 || attemptCount >= 2) {
-                        try {
-                            const revealBtnId = `revealBtn-${i}`;
-                            if (!document.getElementById(revealBtnId)) {
-                                const btn = document.createElement('button');
-                                btn.id = revealBtnId;
-                                btn.textContent = 'Reveal answer';
-                                btn.className = 'mt-3 bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm';
-                                btn.onclick = function() { revealAnswer(i, responses[i], videoData); };
-                                feedbackDiv.appendChild(btn);
-                            }
-                        } catch (e) { console.error('Error adding reveal button', e); }
-                    }
-
-                    // Add delay between feedback generations to show it's working
-                    await new Promise(resolve => setTimeout(resolve, 1500));
+                // Show Reveal button only after third hint (hintLevel 3) OR after second attempt
+                if (hintLevel >= 3 || attemptCount >= 2) {
+                    try {
+                        const revealBtnId = `revealBtn-0`;
+                        if (!document.getElementById(revealBtnId)) {
+                            const btn = document.createElement('button');
+                            btn.id = revealBtnId;
+                            btn.textContent = 'Reveal answer';
+                            btn.className = 'mt-3 bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-sm';
+                            btn.onclick = function() { revealAnswer(0, responses[0], videoData); };
+                            feedbackDiv.appendChild(btn);
+                        }
+                    } catch (e) { console.error('Error adding reveal button', e); }
                 }
 
             } catch (error) {
@@ -2981,18 +2992,13 @@ Make sure each flashcard tests something specific from the transcript content.`;
             
             // Collect recall responses
             const responses = [];
-            for (let i = 0; i < 4; i++) {
-                const response = document.getElementById(`recall${i}`).value;
-                if (response.trim()) {
-                    responses.push(response);
-                }
-            }
-
-            if (responses.length < 2) {
-                alert('Please answer at least 2 questions before continuing!');
+            const r0 = document.getElementById('recall0');
+            const text0 = r0 ? r0.value.trim() : '';
+            if (!text0) {
+                alert('Please answer the question before continuing!');
                 return;
             }
-
+            responses.push(text0);
             videoData.recallResponses = responses;
             console.log('Responses collected:', responses.length);
             console.log('Flashcards available:', flashcards ? flashcards.length : 0);
