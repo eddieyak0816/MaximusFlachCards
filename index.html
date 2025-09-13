@@ -5960,10 +5960,17 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     modal.innerHTML = `<div id="modalContent" style="background:white;max-width:1200px;width:96vw;max-height:90vh;overflow:auto;border-radius:16px;padding:32px;box-shadow:0 8px 32px #0003;">
                         <h2 style="font-size:2rem;font-weight:bold;margin-bottom:1rem;">All Flashcards</h2>
                         <div id="cardCountDisplay" style="font-size:1rem;color:#666;margin-bottom:1rem;">Loading cards...</div>
-                        <div style='margin-bottom:10px;display:flex;gap:8px;align-items:center;'>
-                            <label style='font-size:0.9rem;color:#4a5568;'>Studied on:</label>
-                            <input type='date' id='studiedDateFilter' onchange='applyTableFilters()' style='padding:4px 6px;border-radius:6px;border:1px solid #ccc;height:30px;' />
+                        <div style='margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;'>
+                            <label style='font-size:0.9rem;color:#4a5568;'>Studied start:</label>
+                            <input type='date' id='studiedStartInput' oninput='applyTableFilters()' style='padding:4px 6px;border-radius:6px;border:1px solid #ccc;height:30px;' />
+                            <label style='font-size:0.9rem;color:#4a5568;margin-left:6px;'>Studied end:</label>
+                            <input type='date' id='studiedEndInput' oninput='applyTableFilters()' style='padding:4px 6px;border-radius:6px;border:1px solid #ccc;height:30px;' />
                             <label style='font-size:0.9rem;color:#4a5568;margin-left:6px;display:flex;align-items:center;gap:6px;'><input type='checkbox' id='studiedOnly' onchange='applyTableFilters()'/> Only show studied</label>
+                            <div style='margin-left:12px;display:flex;gap:6px;align-items:center;'>
+                                <button onclick='(function(){ const d=new Date(); const iso=d.toISOString().slice(0,10); document.getElementById("studiedStartInput").value=iso; document.getElementById("studiedEndInput").value=iso; applyTableFilters(); })()' style='padding:4px 8px;border-radius:6px;background:#edf2f7;border:none;cursor:pointer;'>Today</button>
+                                <button onclick='(function(){ const d=new Date(); const s=d.toISOString().slice(0,10); const e=new Date(d.getTime()+7*24*3600*1000).toISOString().slice(0,10); document.getElementById("studiedStartInput").value=s; document.getElementById("studiedEndInput").value=e; document.getElementById("studiedOnly").checked=true; applyTableFilters(); })()' style='padding:4px 8px;border-radius:6px;background:#f7fafc;border:none;cursor:pointer;'>This week</button>
+                                <button onclick='(function(){ const d=new Date(); d.setDate(d.getDate()-1); const iso=d.toISOString().slice(0,10); document.getElementById("studiedStartInput").value=iso; document.getElementById("studiedEndInput").value=iso; document.getElementById("studiedOnly").checked=true; applyTableFilters(); })()' style='padding:4px 8px;border-radius:6px;background:#fff5f5;border:none;cursor:pointer;'>Yesterday</button>
+                            </div>
                         </div>
                         <button onclick="document.getElementById('flashcardModal').remove()" style="position:absolute;top:24px;right:40px;font-size:1.5rem;background:#eee;border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;">&times;</button>
                         <div id="flashcardTableContainer"></div>
@@ -6044,13 +6051,16 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             </select>
                             <label style='font-size:0.9rem;color:#4a5568;margin-left:6px;'>Search:</label>
                             <input id='searchKeyword' placeholder='keyword' oninput='applyTableFilters()' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;height:30px;font-size:0.9rem;' />
-                            <select id='dueOp' onchange='applyTableFilters()' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;height:30px;font-size:0.9rem;'>
-                                <option value=''>due</option>
-                                <option value='='>=</option>
-                                <option value='>'>></option>
-                                <option value='<'><</option>
-                            </select>
-                            <input id='dueDateInput' type='date' onchange='applyTableFilters()' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;height:30px;font-size:0.9rem;' />
+                            <label style='font-size:0.9rem;color:#4a5568;margin-left:6px;'>Due start:</label>
+                            <input id='dueStartInput' type='date' oninput='applyTableFilters()' title='Show cards with Next Review on or after this date' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;height:30px;font-size:0.9rem;margin-left:6px;' />
+                            <span style='font-size:0.9rem;color:#4a5568;margin-left:4px;margin-right:4px;'>–</span>
+                            <label style='font-size:0.9rem;color:#4a5568;'>Due end:</label>
+                            <input id='dueEndInput' type='date' oninput='applyTableFilters()' title='Show cards with Next Review on or before this date' style='padding:4px 6px;border-radius:4px;border:1px solid #ccc;height:30px;font-size:0.9rem;' />
+                            <div style='display:flex;gap:6px;margin-left:8px;align-items:center;'>
+                                <button onclick='(function(){ const s=new Date(); const e=new Date(); document.getElementById("dueStartInput").value = s.toISOString().slice(0,10); document.getElementById("dueEndInput").value = e.toISOString().slice(0,10); applyTableFilters(); })()' style='padding:4px 8px;border-radius:6px;background:#edf2f7;border:none;cursor:pointer;'>Today</button>
+                                <button onclick='(function(){ const s=new Date(); const e=new Date(s.getTime()+7*24*3600*1000); document.getElementById("dueStartInput").value = s.toISOString().slice(0,10); document.getElementById("dueEndInput").value = e.toISOString().slice(0,10); applyTableFilters(); })()' style='padding:4px 8px;border-radius:6px;background:#f7fafc;border:none;cursor:pointer;'>Next 7 days</button>
+                                <button onclick='(function(){ const s=new Date(0,0,0); const e=new Date(); e.setDate(e.getDate()-1); document.getElementById("dueStartInput").value = ''; document.getElementById("dueEndInput").value = new Date().toISOString().slice(0,10); applyTableFilters(); })()' style='padding:4px 8px;border-radius:6px;background:#fff5f5;border:none;cursor:pointer;'>Overdue</button>
+                            </div>
                             <button onclick='clearAllFilters()' style='padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;height:30px;background:#edf2f7;color:#2d3748;cursor:pointer;margin-left:6px;'>Clear</button>
                             <a href='javascript:void(0)' onclick='showRatingFormula()' style='font-size:0.78rem;color:#2563eb;text-decoration:underline;margin-left:8px;'>How ratings work</a>
                         </div>
@@ -6430,18 +6440,9 @@ window.sortAllCardsTable = function(col) {
             }
 
             // Apply category filter in the All Cards modal (client-side filtering)
+            // Delegate to the unified table filter to avoid duplicated logic
             function applyCategoryFilter() {
-                const filterSel = document.getElementById('filterCategorySelect');
-                if (!filterSel) return;
-                const val = filterSel.value;
-                document.querySelectorAll('#flashcardTableContainer table tbody tr').forEach(tr => {
-                    const cat = tr.getAttribute('data-cat') || '';
-                    if (val === '' || val === '__all__') {
-                        tr.style.display = '';
-                    } else {
-                        if (String(cat) === String(val)) tr.style.display = ''; else tr.style.display = 'none';
-                    }
-                });
+                try { applyTableFilters(); } catch(e) { console.error('applyCategoryFilter error', e); }
             }
 
             // Show rating formula explanation modal
@@ -6660,15 +6661,42 @@ window.sortAllCardsTable = function(col) {
             try {
                 const filterSel = document.getElementById('filterCategorySelect');
                 const keywordEl = document.getElementById('searchKeyword');
-                const dueOp = document.getElementById('dueOp');
-                const dueInput = document.getElementById('dueDateInput');
+                
                 const catVal = filterSel ? filterSel.value : '__all__';
                 const keyword = keywordEl ? (keywordEl.value || '').toLowerCase().trim() : '';
-                const op = dueOp ? dueOp.value : '';
-                const dueVal = dueInput ? dueInput.value : '';
+                const dueStartEl = document.getElementById('dueStartInput');
+                const dueEndEl = document.getElementById('dueEndInput');
+                const dueStartVal = dueStartEl ? dueStartEl.value : '';
+                const dueEndVal = dueEndEl ? dueEndEl.value : '';
+
+                // Precompute start/end ms for due range (local day boundaries)
+                let startMs = null, endMs = null;
+                if (dueStartVal) {
+                    const p = String(dueStartVal).split('-');
+                    if (p.length === 3) { const y = parseInt(p[0],10), m = parseInt(p[1],10)-1, d = parseInt(p[2],10); startMs = new Date(y,m,d,0,0,0,0).getTime(); }
+                }
+                if (dueEndVal) {
+                    const p2 = String(dueEndVal).split('-');
+                    if (p2.length === 3) { const y2 = parseInt(p2[0],10), m2 = parseInt(p2[1],10)-1, d2 = parseInt(p2[2],10); endMs = new Date(y2,m2,d2,23,59,59,999).getTime(); }
+                }
 
                 // Save filter persistently (localStorage) so modal refreshes keep it
                 try { localStorage.setItem('allCardsFilter', catVal); } catch(e) {}
+
+                // Studied date range inputs
+                const studiedStartEl = document.getElementById('studiedStartInput');
+                const studiedEndEl = document.getElementById('studiedEndInput');
+                const studiedStartVal = studiedStartEl ? studiedStartEl.value : '';
+                const studiedEndVal = studiedEndEl ? studiedEndEl.value : '';
+                let studiedStartMs = null, studiedEndMs = null;
+                if (studiedStartVal) {
+                    const ps = String(studiedStartVal).split('-');
+                    if (ps.length === 3) { const y = parseInt(ps[0],10), m = parseInt(ps[1],10)-1, d = parseInt(ps[2],10); studiedStartMs = new Date(y,m,d,0,0,0,0).getTime(); }
+                }
+                if (studiedEndVal) {
+                    const pe = String(studiedEndVal).split('-');
+                    if (pe.length === 3) { const y2 = parseInt(pe[0],10), m2 = parseInt(pe[1],10)-1, d2 = parseInt(pe[2],10); studiedEndMs = new Date(y2,m2,d2,23,59,59,999).getTime(); }
+                }
 
                 document.querySelectorAll('#flashcardTableContainer table tbody tr').forEach(tr => {
                     const cat = tr.getAttribute('data-cat') || '';
@@ -6690,46 +6718,36 @@ window.sortAllCardsTable = function(col) {
                     if (visible && keyword) {
                         visible = (front.indexOf(keyword) !== -1) || (back.indexOf(keyword) !== -1);
                     }
-                    // Due date filter
-                    if (visible && op && dueVal) {
-                        // Parse dueVal (YYYY-MM-DD) as local date components to avoid Date string UTC parsing differences
-                        const parts = String(dueVal).split('-');
-                        if (parts.length === 3) {
-                            const y = parseInt(parts[0],10), m = parseInt(parts[1],10)-1, d = parseInt(parts[2],10);
-                            // local day's start and end (inclusive)
-                            const dayStart = new Date(y, m, d, 0,0,0,0).getTime();
-                            const dayEnd = new Date(y, m, d, 23,59,59,999).getTime();
-                            const nextTime = nextIso ? new Date(nextIso).getTime() : null;
-                            if (!nextTime) {
-                                visible = false;
-                            } else if (op === '=') {
-                                visible = nextTime >= dayStart && nextTime <= dayEnd;
-                            } else if (op === '>') {
-                                // strictly after the end of the chosen day
-                                visible = nextTime > dayEnd;
-                            } else if (op === '<') {
-                                // strictly before the start of the chosen day
-                                visible = nextTime < dayStart;
-                            }
-                        } else {
+                    // Due date range filter (nextReview between startMs and endMs inclusive)
+                    if (visible && (startMs !== null || endMs !== null)) {
+                        const nextTime = nextIso ? new Date(nextIso).getTime() : null;
+                        if (!nextTime) {
                             visible = false;
+                        } else {
+                            if (startMs !== null && nextTime < startMs) visible = false;
+                            if (endMs !== null && nextTime > endMs) visible = false;
                         }
                     }
 
                         // Studied on filter (reads localStorage 'studyEvents')
                         if (visible) {
-                            const studiedDateEl = document.getElementById('studiedDateFilter');
                             const studiedOnlyEl = document.getElementById('studiedOnly');
-                            const chosenDate = studiedDateEl && studiedDateEl.value ? studiedDateEl.value : null;
-                            if (chosenDate && studiedOnlyEl && studiedOnlyEl.checked) {
-                                // Check localStorage events for this card and date
+                            if (studiedOnlyEl && studiedOnlyEl.checked) {
+                                // Check localStorage events for this card within the studied date range (inclusive)
                                 try {
                                     const raw = localStorage.getItem('studyEvents');
                                     const events = raw ? JSON.parse(raw) : [];
                                     const id = (tr.querySelector('.rowSelect') ? tr.querySelector('.rowSelect').getAttribute('data-id') : null);
-                                    if (!id) visible = false;
+                                    if (!id) { visible = false; }
                                     else {
-                                        const found = events.some(ev => String(ev.cardId) === String(id) && new Date(ev.ts).toISOString().slice(0,10) === chosenDate);
+                                        const found = events.some(ev => {
+                                            if (String(ev.cardId) !== String(id)) return false;
+                                            const t = Number(ev.ts);
+                                            if (isNaN(t)) return false;
+                                            if (studiedStartMs !== null && t < studiedStartMs) return false;
+                                            if (studiedEndMs !== null && t > studiedEndMs) return false;
+                                            return true;
+                                        });
                                         if (!found) visible = false;
                                     }
                                 } catch(e) { /* ignore errors, leave visible as-is */ }
@@ -6768,12 +6786,18 @@ window.sortAllCardsTable = function(col) {
             try {
                 const filterSel = document.getElementById('filterCategorySelect');
                 const keywordEl = document.getElementById('searchKeyword');
-                const dueOp = document.getElementById('dueOp');
-                const dueInput = document.getElementById('dueDateInput');
+                const dueStart = document.getElementById('dueStartInput');
+                const dueEnd = document.getElementById('dueEndInput');
+                const studiedStart = document.getElementById('studiedStartInput');
+                const studiedEnd = document.getElementById('studiedEndInput');
+                const studiedOnly = document.getElementById('studiedOnly');
                 if (filterSel) filterSel.value = '__all__';
                 if (keywordEl) keywordEl.value = '';
-                if (dueOp) dueOp.value = '';
-                if (dueInput) dueInput.value = '';
+                if (dueStart) dueStart.value = '';
+                if (dueEnd) dueEnd.value = '';
+                if (studiedStart) studiedStart.value = '';
+                if (studiedEnd) studiedEnd.value = '';
+                if (studiedOnly) studiedOnly.checked = false;
                 try { localStorage.removeItem('allCardsFilter'); } catch(e) {}
                 applyTableFilters();
             } catch(e) { console.error('clearAllFilters error', e); }

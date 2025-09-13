@@ -101,16 +101,24 @@ if ($useMainProfile) {
 $browserProc = Start-Process -FilePath $chromeExe -ArgumentList $chromeArgs -PassThru
 
 Write-Host "Server PID: $($serverProc.Id); Browser PID: $($browserProc.Id)"
-Write-Host "Waiting for the browser window to close..."
 
-# Wait for the specific browser process to exit
-try {
-    $browserProc.WaitForExit()
-} catch {
-    Write-Host "Warning: failed to wait for browser process. Proceeding to stop server anyway.";
+# If we're using the main profile, Chrome may spawn helper processes and the original process can exit immediately.
+# In that case waiting on the browser process can cause this script to continue and stop the server too early.
+if ($useMainProfile) {
+    Write-Host "Using main Chrome profile. The server will keep running until you stop it manually."
+    Write-Host "Press ENTER in this console to stop the server and exit."
+    Read-Host | Out-Null
+} else {
+    Write-Host "Waiting for the browser window to close..."
+    # Wait for the specific browser process to exit
+    try {
+        $browserProc.WaitForExit()
+    } catch {
+        Write-Host "Warning: failed to wait for browser process. Proceeding to stop server anyway.";
+    }
+
+    try { Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue } catch {}
 }
-
-try { Stop-Process -Id $serverProc.Id -Force -ErrorAction SilentlyContinue } catch {}
 
 # Cleanup temporary profile
 if (-not $useMainProfile) {
