@@ -5623,6 +5623,34 @@ Make sure each flashcard tests something specific from the transcript content.`;
             card.lastStudied = new Date().toISOString();
             
             console.log(`Card updated: ${difficulty} -> interval: ${finalInterval} days, next review: ${nextReview.toISOString()}`);
+            try {
+                // Record study event (localStorage) — stored as array of { cardId, ts, difficulty }
+                recordStudyEvent(card.id || cardIdFromCard(card), difficulty);
+            } catch(e) { console.error('recordStudyEvent failed', e); }
+        }
+
+        // Helper: try to extract id from card object (fallbacks)
+        function cardIdFromCard(card) {
+            if (!card) return null;
+            if (card.id) return card.id;
+            if (card._id) return card._id;
+            return null;
+        }
+
+        // Record study events to localStorage as a simple append-only array
+        function recordStudyEvent(cardId, difficulty) {
+            try {
+                if (!cardId) return;
+                const key = 'studyEvents';
+                const raw = localStorage.getItem(key);
+                const arr = raw ? JSON.parse(raw) : [];
+                arr.push({ cardId: cardId, difficulty: difficulty, ts: Date.now() });
+                // Keep size bounded to last 10000 events to avoid runaway storage
+                if (arr.length > 10000) arr.splice(0, arr.length - 10000);
+                localStorage.setItem(key, JSON.stringify(arr));
+            } catch (e) {
+                console.error('recordStudyEvent error', e);
+            }
         }
 
         function showStudyComplete() {
@@ -5932,6 +5960,11 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     modal.innerHTML = `<div id="modalContent" style="background:white;max-width:1200px;width:96vw;max-height:90vh;overflow:auto;border-radius:16px;padding:32px;box-shadow:0 8px 32px #0003;">
                         <h2 style="font-size:2rem;font-weight:bold;margin-bottom:1rem;">All Flashcards</h2>
                         <div id="cardCountDisplay" style="font-size:1rem;color:#666;margin-bottom:1rem;">Loading cards...</div>
+                        <div style='margin-bottom:10px;display:flex;gap:8px;align-items:center;'>
+                            <label style='font-size:0.9rem;color:#4a5568;'>Studied on:</label>
+                            <input type='date' id='studiedDateFilter' onchange='applyTableFilters()' style='padding:4px 6px;border-radius:6px;border:1px solid #ccc;height:30px;' />
+                            <label style='font-size:0.9rem;color:#4a5568;margin-left:6px;display:flex;align-items:center;gap:6px;'><input type='checkbox' id='studiedOnly' onchange='applyTableFilters()'/> Only show studied</label>
+                        </div>
                         <button onclick="document.getElementById('flashcardModal').remove()" style="position:absolute;top:24px;right:40px;font-size:1.5rem;background:#eee;border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;">&times;</button>
                         <div id="flashcardTableContainer"></div>
                     </div>`;
@@ -6031,6 +6064,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             <th style='padding:8px;border:1px solid #ddd;width:35%;cursor:pointer;' onclick='window.sortAllCardsTable && window.sortAllCardsTable("back")'>Back<span>${window._sortIndicator ? window._sortIndicator('back') : ''}</span></th>
                             <th style='padding:8px;border:1px solid #ddd;cursor:pointer;' onclick='window.sortAllCardsTable && window.sortAllCardsTable("nextReview")'>Next Review<span>${window._sortIndicator ? window._sortIndicator('nextReview') : ''}</span></th>
                             <th style='padding:8px;border:1px solid #ddd;width:80px;text-align:center;cursor:pointer;' onclick='window.sortAllCardsTable && window.sortAllCardsTable("timesStudied")'>Times Studied<span>${window._sortIndicator ? window._sortIndicator('timesStudied') : ''}</span></th>
+                            <th style='padding:8px;border:1px solid #ddd;width:80px;text-align:center;'>Studied</th>
                             <th style='padding:8px;border:1px solid #ddd;width:80px;text-align:center;'>Actions</th>
                         </tr>
                     </thead>
@@ -6065,6 +6099,8 @@ window.sortAllCardsTable = function(col) {
                         optionsHtml += "<option value='__add_new__'>Add New...</option>";
 
                         const dataNext = card.nextReview ? card.nextReview : '';
+                        // determine if card was studied on current studiedDateFilter
+                        const studiedFlagId = `studiedFlag-${card.id}`;
                         tableHtml += `<tr data-cat='${cardCatId}' data-next='${dataNext}'>
                             <td style='padding:8px;border:1px solid #ddd;text-align:center;'><input type='checkbox' class='rowSelect' data-id='${card.id}'/></td>
                             <td style='padding:8px;border:1px solid #ddd;vertical-align:top;'><div style="display:flex;gap:8px;align-items:center;"><select data-card-id='${card.id}' onchange='handleRowCategoryChange(${card.id}, this.value)' style='flex:1;padding:6px;border-radius:6px;border:1px solid #ccc;'>${optionsHtml}</select><div data-add-container='${card.id}'></div></div></td>
@@ -6072,6 +6108,7 @@ window.sortAllCardsTable = function(col) {
                             <td style='padding:8px;border:1px solid #ddd;vertical-align:top;'><textarea id='back-${card.id}' style='width:100%;min-height:120px;resize:vertical;padding:8px;border-radius:6px;border:1px solid #ddd;' onchange='saveRowNow(${card.id})'>${card.back}</textarea></td>
                             <td style='padding:8px;border:1px solid #ddd;cursor:pointer;' id='nextReviewCell-${card.id}'><span id='nextReview-${card.id}' onclick='editDueDate(${card.id})' style='text-decoration:underline;color:#2563eb;'>${card.nextReview ? formatShortDate(card.nextReview) : '(set)'}</span></td>
                             <td style='padding:8px;border:1px solid #ddd;text-align:center;'>${card.timesStudied || 0}</td>
+                            <td style='padding:8px;border:1px solid #ddd;text-align:center;' id='${studiedFlagId}'>-</td>
                             <td style='padding:8px;border:1px solid #ddd;text-align:center;'>
                                 <button onclick='openEditCardModal(${card.id})' title='Edit' style='background:transparent;border:none;padding:4px;cursor:pointer;'>
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4a5568" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
@@ -6088,6 +6125,37 @@ window.sortAllCardsTable = function(col) {
 
                     tableHtml += `</tbody></table>`;
                     document.getElementById('flashcardTableContainer').innerHTML = tableHtml;
+
+                    // After rendering, compute studied flags based on localStorage studyEvents and the date filter
+                    (function applyStudiedFlags(){
+                        try {
+                            const dateEl = document.getElementById('studiedDateFilter');
+                            const onlyEl = document.getElementById('studiedOnly');
+                            const chosen = dateEl && dateEl.value ? dateEl.value : null;
+                            const raw = localStorage.getItem('studyEvents');
+                            const events = raw ? JSON.parse(raw) : [];
+                            const eventsByCard = {};
+                            events.forEach(ev => {
+                                const d = new Date(ev.ts).toISOString().slice(0,10);
+                                if (!eventsByCard[ev.cardId]) eventsByCard[ev.cardId] = {};
+                                if (!eventsByCard[ev.cardId][d]) eventsByCard[ev.cardId][d] = 0;
+                                eventsByCard[ev.cardId][d]++;
+                            });
+
+                            const rows = Array.from(document.querySelectorAll('tr[data-cat]'));
+                            rows.forEach(tr => {
+                                const checkbox = tr.querySelector('.rowSelect');
+                                const id = checkbox ? checkbox.getAttribute('data-id') : null;
+                                const flagCell = document.getElementById(`studiedFlag-${id}`);
+                                const studiedOnDate = chosen && id && eventsByCard[id] && eventsByCard[id][chosen];
+                                if (flagCell) flagCell.textContent = studiedOnDate ? '✔' : '-';
+                                // If 'Only show studied' is checked and this card wasn't studied then hide the row
+                                if (onlyEl && onlyEl.checked) {
+                                    if (!studiedOnDate) tr.style.display = 'none'; else tr.style.display = '';
+                                }
+                            });
+                        } catch(e) { console.error('applyStudiedFlags error', e); }
+                    })();
 
                     // Update card count display
                     updateCardCount();
@@ -6647,6 +6715,26 @@ window.sortAllCardsTable = function(col) {
                             visible = false;
                         }
                     }
+
+                        // Studied on filter (reads localStorage 'studyEvents')
+                        if (visible) {
+                            const studiedDateEl = document.getElementById('studiedDateFilter');
+                            const studiedOnlyEl = document.getElementById('studiedOnly');
+                            const chosenDate = studiedDateEl && studiedDateEl.value ? studiedDateEl.value : null;
+                            if (chosenDate && studiedOnlyEl && studiedOnlyEl.checked) {
+                                // Check localStorage events for this card and date
+                                try {
+                                    const raw = localStorage.getItem('studyEvents');
+                                    const events = raw ? JSON.parse(raw) : [];
+                                    const id = (tr.querySelector('.rowSelect') ? tr.querySelector('.rowSelect').getAttribute('data-id') : null);
+                                    if (!id) visible = false;
+                                    else {
+                                        const found = events.some(ev => String(ev.cardId) === String(id) && new Date(ev.ts).toISOString().slice(0,10) === chosenDate);
+                                        if (!found) visible = false;
+                                    }
+                                } catch(e) { /* ignore errors, leave visible as-is */ }
+                            }
+                        }
 
                     tr.style.display = visible ? '' : 'none';
                 });
