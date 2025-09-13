@@ -210,7 +210,12 @@
                         <label class="block text-sm font-medium text-gray-700 mb-2">Video Transcript (Optional but Recommended)</label>
                         <textarea id="videoTranscript" placeholder="Paste the video transcript here... You can get this from YouTube by clicking the three dots under the video, then 'Show transcript', then copy and paste it here. This helps create much better flashcards!" 
                                   class="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"></textarea>
-                        <p class="text-xs text-gray-500 mt-1">💡 Having the transcript makes MUCH better flashcards with specific details from the video!</p>
+                        <div class="mt-2 flex items-center gap-2">
+                            <button id="autoFetchCaptionsBtn" onclick="fetchVideoData(true)" class="text-sm text-blue-600 hover:underline">🔁 Try auto-fetch captions (more sources)</button>
+                            <button id="startMicTranscribeBtn" onclick="startMicrophoneTranscription()" class="text-sm text-indigo-600 hover:underline">🎤 Transcribe via Microphone (STT fallback)</button>
+                            <button id="stopMicTranscribeBtn" onclick="stopMicrophoneTranscription()" class="text-sm text-red-600 hover:underline hidden">■ Stop Mic</button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">💡 Having the transcript makes MUCH better flashcards with specific details from the video! Use the microphone option to record while playing the video (useful when automatic captions aren't available).</p>
                         
 
                     </div>
@@ -372,10 +377,46 @@
                     }
                 } catch(e){}
             }
-            // Esc -> close visible modals
+            // Esc -> close the topmost modal (front-most) first
             if (e.key === 'Escape') {
-                try { document.getElementById('flashcardModal') && document.getElementById('flashcardModal').remove(); } catch(e){}
-                try { document.getElementById('categoryModal') && document.getElementById('categoryModal').remove(); } catch(e){}
+                try {
+                    // collect candidate modals: ids ending with 'Modal' and known preview ids
+                    const candidates = Array.from(document.querySelectorAll('[id$="Modal"], [id^="__imagePreviewModal"], [id^="__"]'))
+                        .filter(n => n && n.id && n.style && window.getComputedStyle(n).display !== 'none');
+
+                    // choose the topmost by computed z-index, falling back to DOM order
+                    let top = null;
+                    let topZ = -Infinity;
+                    candidates.forEach(n => {
+                        let z = 0;
+                        try { z = parseInt(window.getComputedStyle(n).zIndex) || 0; } catch(e) { z = 0; }
+                        // treat null/auto as 0
+                        if (z > topZ) {
+                            top = n; topZ = z;
+                        } else if (z === topZ && top) {
+                            // if equal z-index, prefer the one later in DOM (assumed on top)
+                            try {
+                                if (top.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING) {
+                                    top = n;
+                                }
+                            } catch(e) {}
+                        }
+                    });
+
+                    let closed = false;
+                    if (top) {
+                        top.remove(); closed = true;
+                    } else {
+                        // fallback: close from preferred list if present
+                        const preferred = ['editCardModal','createCardModal','addHintsModal','bulkAddHintsModal','aiChatModal','categoryModal','flashcardModal'];
+                        for (let i = 0; i < preferred.length; i++) {
+                            const m = document.getElementById(preferred[i]);
+                            if (m) { m.remove(); closed = true; break; }
+                        }
+                    }
+
+                    if (closed) { e.stopPropagation(); e.preventDefault(); }
+                } catch (ex) { console.error('Escape handler error', ex); }
             }
             // Shift+/ -> toggle AI Setup
             if (e.shiftKey && e.key === '?') {
@@ -2534,11 +2575,84 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 showStep(currentStep - 1);
             }
         }
+        // Enhanced caption fetching: try multiple public endpoints and heuristics
+        // autoAttempt: when true, will try extra sources beyond the simple proxy
+        async function tryFetchCaptionsFromMultipleSources(url, autoAttempt = false) {
+            // Helper to attempt a fetch and return transcript string or null
+            async function tryFetchJson(path, extractor) {
+                try {
+                    const res = await fetch(path);
+                    if (!res.ok) return null;
+                    const json = await res.json().catch(() => null);
+                    if (!json) return null;
+                    return extractor(json);
+                } catch (e) { return null; }
+            }
 
-        async function fetchVideoData() {
+            // 1) Try the existing herokuapp proxy
+            try {
+                const heroku = `https://youtube-transcript-api.herokuapp.com/transcript?url=${encodeURIComponent(url)}`;
+                const hres = await fetch(heroku);
+                if (hres.ok) {
+                    const hjson = await hres.json();
+                    if (Array.isArray(hjson)) return hjson.map(i => i.text).join(' ');
+                }
+            } catch (e) { /* ignore */ }
+
+            if (!autoAttempt) return null;
+
+            // 2) Try a jina.ai heuristic (may return page text)
+            try {
+                const ares = await fetch(`https://r.jina.ai/http://r.jina.ai/http://r.jina.ai/http://r.jina.ai/${encodeURIComponent(url)}`);
+                if (ares.ok) {
+                    const txt = await ares.text();
+                    if (txt && txt.length > 50) return txt;
+                }
+            } catch (e) { /* ignore */ }
+
+            // 3) Try a public yttranscript mirror
+            try {
+                const mirror = `https://yttranscript.rtfd.io/v1/?url=${encodeURIComponent(url)}`;
+                const mres = await fetch(mirror);
+                if (mres.ok) {
+                    const mjson = await mres.json().catch(() => null);
+                    if (Array.isArray(mjson)) return mjson.map(i => i.text).join(' ');
+                }
+            } catch (e) { /* ignore */ }
+
+            // 4) As a fragile fallback, try to scrape the watch page for captionTracks
+            try {
+                const page = await fetch(url);
+                if (page.ok) {
+                    const html = await page.text();
+                    const m = html.match(/captionTracks\":(\[.*?\])/s);
+                    if (m && m[1]) {
+                        try {
+                            const ct = JSON.parse(m[1]);
+                            if (Array.isArray(ct) && ct.length > 0) {
+                                const baseUrl = ct[0].baseUrl || ct[0].baseUrlSimple || ct[0].url;
+                                if (baseUrl) {
+                                    const txtRes = await fetch(baseUrl);
+                                    if (txtRes.ok) {
+                                        const txt = await txtRes.text();
+                                        const cleaned = txt.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+                                        if (cleaned.length > 50) return cleaned;
+                                    }
+                                }
+                            }
+                        } catch (e) { /* ignore parse errors */ }
+                    }
+                }
+            } catch (e) { /* ignore */ }
+
+            return null;
+        }
+
+        // Enhanced fetchVideoData that optionally tries extra caption sources
+        async function fetchVideoData(tryExtraSources = false) {
             const url = document.getElementById('videoUrl').value;
             const statusDiv = document.getElementById('fetchStatus');
-            
+
             if (!url) {
                 statusDiv.innerHTML = '<div class="text-red-600 text-sm">Please enter a YouTube URL first!</div>';
                 return;
@@ -2549,64 +2663,73 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 return;
             }
 
-            statusDiv.innerHTML = '<div class="text-blue-600 text-sm">🔄 Fetching video data...</div>';
+            statusDiv.innerHTML = '<div class="text-blue-600 text-sm">🔄 Fetching video data (enhanced)...</div>';
 
             try {
-                // Extract video ID from URL
+                // Extract video ID
                 let videoId = '';
-                if (url.includes('youtube.com/watch')) {
-                    videoId = url.split('v=')[1]?.split('&')[0];
-                } else if (url.includes('youtu.be/')) {
-                    videoId = url.split('youtu.be/')[1]?.split('?')[0];
-                }
+                if (url.includes('youtube.com/watch')) videoId = url.split('v=')[1]?.split('&')[0];
+                else if (url.includes('youtu.be/')) videoId = url.split('youtu.be/')[1]?.split('?')[0];
 
-                if (!videoId) {
-                    throw new Error('Could not extract video ID from URL');
-                }
+                if (!videoId) throw new Error('Could not extract video ID');
 
-                // Use YouTube oEmbed API to get basic video info
+                // Use oEmbed for title
                 const oembedResponse = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
-                
-                if (!oembedResponse.ok) {
-                    throw new Error('Video not found or private');
-                }
-
+                if (!oembedResponse.ok) throw new Error('Video not found or private');
                 const videoInfo = await oembedResponse.json();
-                
-                // Video title fetched but not displayed to user
-                
-                // Try to get transcript using YouTube's transcript API
+
+                // Prefer the public transcript proxy so the UI works without a local server
                 try {
-                    // Note: This is a simplified approach. In a real implementation, you'd need a backend service
-                    // to handle YouTube transcript fetching due to CORS restrictions
                     const transcriptResponse = await fetch(`https://youtube-transcript-api.herokuapp.com/transcript?url=${encodeURIComponent(url)}`);
-                    
                     if (transcriptResponse.ok) {
                         const transcriptData = await transcriptResponse.json();
                         const transcript = transcriptData.map(item => item.text).join(' ');
                         document.getElementById('videoTranscript').value = transcript;
-                        
-                        statusDiv.innerHTML = '<div class="text-green-600 text-sm">✅ Successfully fetched video title and transcript!</div>';
-                    } else {
-                        throw new Error('Transcript not available');
+                        statusDiv.innerHTML = '<div class="text-green-600 text-sm">✅ Fetched transcript via public proxy!</div>';
+                        return;
                     }
-                } catch (transcriptError) {
-                    // If transcript fetch fails, still show success for title
-                    statusDiv.innerHTML = `
-                        <div class="text-yellow-600 text-sm">
-                            ⚠️ Got video title but transcript unavailable. 
-                            <br>💡 You can manually add the transcript by clicking the three dots under the YouTube video → "Show transcript" → copy and paste here.
-                        </div>
-                    `;
+                } catch (e) {
+                    console.log('Public transcript proxy failed or unreachable:', e && e.message);
                 }
 
-                // Subject will be auto-detected from transcript content
+                // Fallback: try local transcription proxy if available (runs the repo's caption helper)
+                try {
+                    const proxyResp = await fetch('http://localhost:3000/transcribe', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url })
+                    });
+                    if (proxyResp.ok) {
+                        const data = await proxyResp.json();
+                        if (data && data.transcript && data.transcript.length > 50) {
+                            document.getElementById('videoTranscript').value = data.transcript;
+                            statusDiv.innerHTML = '<div class="text-green-600 text-sm">✅ Transcribed via local proxy (fallback)!</div>';
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Local proxy not available or failed:', e && e.message);
+                }
 
-                // Auto-detect length based on duration (if available in future)
-                // For now, we'll leave it for user to select
+                // Try extra sources if requested
+                if (tryExtraSources) {
+                    const extra = await tryFetchCaptionsFromMultipleSources(url, true);
+                    if (extra && extra.length > 50) {
+                        document.getElementById('videoTranscript').value = extra;
+                        statusDiv.innerHTML = '<div class="text-green-600 text-sm">✅ Captions fetched from alternate sources!</div>';
+                        return;
+                    }
+                }
+
+                // If all caption attempts failed
+                statusDiv.innerHTML = `
+                    <div class="text-yellow-600 text-sm">
+                        ⚠️ Got video title but transcript unavailable from automatic sources. 
+                        <br>💡 You can manually add the transcript by clicking the three dots under the YouTube video → "Show transcript" → copy and paste it here, or use the Microphone Transcribe option while playing the video.
+                    </div>
+                `;
 
             } catch (error) {
-                console.error('Error fetching video data:', error);
+                console.error('Error fetching video data (enhanced):', error);
                 statusDiv.innerHTML = `
                     <div class="text-red-600 text-sm">
                         ❌ Could not fetch video data automatically. 
@@ -2615,6 +2738,65 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     </div>
                 `;
             }
+        }
+
+        // Microphone transcription (STT fallback) using Web Speech API
+        let micRecognition = null;
+        let micTranscribing = false;
+        function startMicrophoneTranscription() {
+            const startBtn = document.getElementById('startMicTranscribeBtn');
+            const stopBtn = document.getElementById('stopMicTranscribeBtn');
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                alert('Speech recognition (Web Speech API) is not supported in this browser. Try Chrome on desktop.');
+                return;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            micRecognition = new SpeechRecognition();
+            micRecognition.continuous = true;
+            micRecognition.interimResults = true;
+            micRecognition.lang = (navigator.language || 'en-US');
+
+            micRecognition.onstart = function() {
+                micTranscribing = true;
+                startBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+                document.getElementById('fetchStatus').innerHTML = '<div class="text-blue-600 text-sm">🎤 Microphone transcribing... Play the video and the transcript will be captured.</div>';
+            };
+
+            let interim = '';
+            let finalTranscript = document.getElementById('videoTranscript').value || '';
+
+            micRecognition.onresult = function(event) {
+                interim = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    const res = event.results[i];
+                    if (res.isFinal) {
+                        finalTranscript += ' ' + res[0].transcript;
+                    } else {
+                        interim += ' ' + res[0].transcript;
+                    }
+                }
+                document.getElementById('videoTranscript').value = finalTranscript + interim;
+            };
+
+            micRecognition.onerror = function(err) {
+                console.error('Speech recognition error', err);
+                document.getElementById('fetchStatus').innerHTML = `<div class="text-red-600 text-sm">⚠️ Microphone error: ${err.error}</div>`;
+            };
+
+            micRecognition.onend = function() {
+                micTranscribing = false;
+                startBtn.classList.remove('hidden');
+                stopBtn.classList.add('hidden');
+                document.getElementById('fetchStatus').innerHTML = '<div class="text-green-600 text-sm">✅ Microphone transcription stopped. You can edit the transcript before generating flashcards.</div>';
+            };
+
+            try { micRecognition.start(); } catch (e) { console.error('mic start err', e); }
+        }
+
+        function stopMicrophoneTranscription() {
+            try { if (micRecognition) micRecognition.stop(); } catch (e) { console.error(e); }
         }
 
         function startRecall() {
@@ -4064,26 +4246,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 if (!('speechSynthesis' in window)) { window._ttsPrimed = true; return; }
                 // wait briefly for voices to appear
                 const voices = await ensureVoicesLoaded(2000);
-                // create a near-silent utterance to prime audio and voices
-                let sampleText = preprocessTTS('Initializing voice features.');
-
-                const u = new SpeechSynthesisUtterance(sampleText);
-                u.rate = 1; u.pitch = 1; u.lang = navigator.language || 'en-US';
-                try { u.volume = 0.02; } catch (e) { /* volume may be unsupported */ }
-                // pick a voice if we have a saved preference or any available voice
-                try {
-                    const saved = localStorage.getItem('ttsVoice') || '';
-                    const list = window.speechSynthesis.getVoices() || voices || [];
-                    let found = null;
-                    if (saved) found = list.find(v => v.name === saved || (v.name + ' (' + v.lang + ')') === saved);
-                    if (!found && list.length) found = list[0];
-                    if (found) u.voice = found;
-                } catch (e) { /* ignore */ }
-                // mark primed once utterance starts to avoid races
-                u.onstart = function() { window._ttsPrimed = true; };
-                u.onend = function() { try { /* no-op */ } catch (e) {} };
-                // speak quietly (user gesture required before this is called)
-                try { window.speechSynthesis.speak(u); } catch (e) { window._ttsPrimed = true; }
+                // Startup TTS is disabled for silent startup.
+                window._ttsPrimed = true;
             } catch (e) { try { window._ttsPrimed = true; } catch (e) {} }
         }
 
@@ -5833,6 +5997,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                 <option value=''>Set category...</option>
                             </select>
                             <button onclick="bulkChangeCategory()" style='background:#3182ce;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-left:8px;height:30px;'>Apply</button>
+                            <button onclick="bulkAddHints()" style='background:#38a169;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-left:8px;height:30px;'>Add hints to selected</button>
                             <label style='margin-left:8px;font-size:0.9rem;color:#4a5568;'>Bulk due:</label>
                             <input type='date' id='bulkDueInput' style='padding:4px 6px;border-radius:6px;border:1px solid #ccc;height:30px;' />
                             <button onclick='bulkApplyDueDate()' style='background:#805ad5;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-left:6px;height:30px;'>Apply date to selected</button>
@@ -5910,6 +6075,9 @@ window.sortAllCardsTable = function(col) {
                             <td style='padding:8px;border:1px solid #ddd;text-align:center;'>
                                 <button onclick='openEditCardModal(${card.id})' title='Edit' style='background:transparent;border:none;padding:4px;cursor:pointer;'>
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4a5568" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+                                </button>
+                                <button onclick='promptAddHintsForCard(${card.id})' title='Add Hints' style='background:transparent;border:none;padding:4px;cursor:pointer;margin-left:6px;'>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2d3748" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M5 9h14"></path><path d="M5 15h14"></path></svg>
                                 </button>
                                 <button onclick='deleteFlashcard(${card.id})' title='Delete' style='background:transparent;border:none;padding:4px;cursor:pointer;margin-left:6px;'>
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e53e3e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -6602,6 +6770,104 @@ window.sortAllCardsTable = function(col) {
             tx.oncomplete = function() { try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); };
         }
 
+        // Prompt and add hints to a single card (cardId)
+        function promptAddHintsForCard(cardId) {
+            const modalId = 'addHintsModal';
+            if (!db) return alert('DB not ready');
+            const tx = db.transaction(['flashcards'], 'readonly');
+            const store = tx.objectStore('flashcards');
+            const req = store.get(cardId);
+            req.onsuccess = function(evt) {
+                const card = evt.target.result || { hints: [] };
+                const initial = Array.isArray(card.hints) ? card.hints.join('\n') : '';
+                createHintsModal(modalId, async (raw) => {
+                    // Allow saving empty -> clears hints
+                    const hints = parseHintsInput(raw);
+                    // hints may be empty -> treat as clearing hints
+                    await addHintsToCard(cardId, hints);
+                    document.getElementById(modalId) && document.getElementById(modalId).remove();
+                    try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards();
+                }, initial);
+            };
+            req.onerror = function() { alert('Could not load card'); };
+        }
+
+        // Bulk add hints to selected cards
+        function bulkAddHints() {
+            const ids = getSelectedCardIds();
+            if (!ids || ids.length === 0) return alert('No cards selected');
+            const modalId = 'bulkAddHintsModal';
+            createHintsModal(modalId, async (raw) => {
+                const hints = parseHintsInput(raw);
+                if (!hints || hints.length === 0) return alert('No hints provided');
+                if (!db) return alert('DB not ready');
+                const tx = db.transaction(['flashcards'], 'readwrite');
+                const store = tx.objectStore('flashcards');
+                ids.forEach(id => {
+                    const req = store.get(id);
+                    req.onsuccess = function(evt) {
+                        const card = evt.target.result || { id };
+                        const existing = Array.isArray(card.hints) ? card.hints : [];
+                        const merged = mergeHints(existing, hints);
+                        card.hints = merged;
+                        store.put(card);
+                    };
+                });
+                tx.oncomplete = function() { document.getElementById(modalId) && document.getElementById(modalId).remove(); try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); };
+            });
+        }
+
+        // Add hints array to a single card (merge/dedupe)
+        function addHintsToCard(cardId, hints) {
+            return new Promise((resolve, reject) => {
+                if (!db) return reject('DB not ready');
+                const tx = db.transaction(['flashcards'], 'readwrite');
+                const store = tx.objectStore('flashcards');
+                const req = store.get(cardId);
+                req.onsuccess = function(evt) {
+                    const card = evt.target.result || { id: cardId };
+                    const existing = Array.isArray(card.hints) ? card.hints : [];
+                    card.hints = mergeHints(existing, hints);
+                    store.put(card);
+                };
+                tx.oncomplete = function() { resolve(); };
+                tx.onerror = function(e) { reject(e); };
+            });
+        }
+
+        // Parse raw input (comma or newline separated) into trimmed non-empty strings
+        function parseHintsInput(raw) {
+            if (!raw) return [];
+            const parts = raw.split(/\r?\n|,/).map(s => s.trim()).filter(s => s);
+            // remove duplicates while preserving order
+            return Array.from(new Set(parts));
+        }
+
+        function mergeHints(existing, added) {
+            const out = Array.isArray(existing) ? existing.slice() : [];
+            added.forEach(h => {
+                if (!out.includes(h)) out.push(h);
+            });
+            return out;
+        }
+
+        // Create a small modal that collects hints and calls onSave(rawText)
+        function createHintsModal(id, onSave, initialText) {
+            // remove if exists
+            const prev = document.getElementById(id);
+            if (prev) prev.remove();
+            const modal = document.createElement('div');
+            modal.id = id;
+            modal.style.position = 'fixed'; modal.style.top = '0'; modal.style.left = '0'; modal.style.width = '100vw'; modal.style.height = '100vh'; modal.style.background = 'rgba(0,0,0,0.6)'; modal.style.zIndex = '13000'; modal.style.display = 'flex'; modal.style.justifyContent = 'center'; modal.style.alignItems = 'center';
+            modal.innerHTML = `<div style='background:white;padding:18px;border-radius:10px;max-width:700px;width:90vw;'><h3 style='margin-top:0;margin-bottom:8px;'>Add hints (comma or newline separated)</h3><textarea id='hintsInput' placeholder='e.g. synonym, example sentence, mnemonic' style='width:100%;min-height:120px;padding:8px;border-radius:6px;border:1px solid #ccc;'>${initialText ? initialText.replace(/</g,'&lt;') : ''}</textarea><div style='text-align:right;margin-top:10px;'><button id='hintsCancel' style='padding:6px 10px;margin-right:8px;background:#e2e8f0;border:none;border-radius:6px;'>Cancel</button><button id='hintsSave' style='padding:6px 10px;background:#38a169;color:white;border:none;border-radius:6px;'>Save</button></div></div>`;
+            document.body.appendChild(modal);
+            document.getElementById('hintsCancel').addEventListener('click', () => modal.remove());
+            document.getElementById('hintsSave').addEventListener('click', () => {
+                const raw = document.getElementById('hintsInput').value;
+                try { onSave && onSave(raw); } catch(e) { console.error('createHintsModal onSave error', e); }
+            });
+        }
+
         function toggleMasterSelect(master) {
             const rows = document.querySelectorAll('.rowSelect');
             rows.forEach(r => { r.checked = master.checked; });
@@ -7024,6 +7290,9 @@ window.sortAllCardsTable = function(col) {
             s.defer = true;
             document.body.appendChild(s);
         } catch (e) { console.error('Failed to load reading_adventure.js', e); }
+
+        // IndexedDB diagnostic helper (shows a compact panel and allows export)
+        
     </script>
     <!-- Removed Cloudflare injected /cdn-cgi challenge-platform script which breaks local file:// usage. If you deploy behind Cloudflare, their runtime may inject this automatically. -->
 </body>
