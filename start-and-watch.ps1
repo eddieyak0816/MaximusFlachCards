@@ -110,10 +110,64 @@ if ($useMainProfile) {
     # should include a recognizable keyword (e.g. 'Maximus'). Adjust if your title differs.
     $titlePattern = 'Maximus'
     try {
+        # Use Win32 EnumWindows to reliably check window titles (better than MainWindowTitle on Chrome)
+        Add-Type -Namespace Win32 -Name User32 -MemberDefinition @"
+        [DllImport("user32.dll")]
+        public static extern bool EnumWindows(Func<IntPtr, IntPtr, bool> enumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
+
+        [DllImport("user32.dll")]
+        public static extern bool IsWindowVisible(IntPtr hWnd);
+"@ -ErrorAction SilentlyContinue
+
+        function Get-WindowTitlesContaining([string]$pattern) {
+            $matches = @()
+            $callback = {
+                param($hwnd, $lparam)
+                if (-not [Win32.User32]::IsWindowVisible($hwnd)) { return $true }
+                $sb = New-Object System.Text.StringBuilder 1024
+                [Win32.User32]::GetWindowText($hwnd, $sb, $sb.Capacity) | Out-Null
+                $title = $sb.ToString()
+                if ($title -and $title -like "*$pattern*") { $matches += $title }
+                return $true
+            }
+            [Win32.User32]::EnumWindows($callback, [IntPtr]::Zero) | Out-Null
+            return $matches
+        }
+
+        function Get-AllWindowTitles() {
+            $all = @()
+            $callback = {
+                param($hwnd, $lparam)
+                if (-not [Win32.User32]::IsWindowVisible($hwnd)) { return $true }
+                $sb = New-Object System.Text.StringBuilder 1024
+                [Win32.User32]::GetWindowText($hwnd, $sb, $sb.Capacity) | Out-Null
+                $title = $sb.ToString()
+                if ($title) { $all += $title }
+                return $true
+            }
+            [Win32.User32]::EnumWindows($callback, [IntPtr]::Zero) | Out-Null
+            return $all
+        }
+
+        # Try several likely title substrings so detection works across setups.
+        $patterns = @($titlePattern, 'index.html', 'Flash Cards', 'Maximus Flash Cards') | Where-Object { $_ }
+
+        # Dump current top-level window titles once to help debugging if detection fails
+        Write-Host "Detected top-level window titles (sample):"
+        $allTitles = Get-AllWindowTitles
+        $allTitles | Select-Object -First 30 | ForEach-Object { Write-Host "  - $_" }
+
         while ($true) {
-            $windows = Get-Process -Name chrome -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -and $_.MainWindowTitle -like "*$titlePattern*" }
-            if (-not $windows) { break }
-            Start-Sleep -Seconds 1
+            $anyFound = $false
+            foreach ($p in $patterns) {
+                $found = Get-WindowTitlesContaining $p
+                if ($found -and $found.Count -gt 0) { $anyFound = $true; break }
+            }
+            if (-not $anyFound) { break }
+            Start-Sleep -Milliseconds 500
         }
     } catch {
         Write-Host "Warning: failed to inspect browser windows; falling back to manual stop prompt."
