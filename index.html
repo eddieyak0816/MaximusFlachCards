@@ -290,9 +290,14 @@
                     <div class="text-6xl mb-4">🎉</div>
                     <h3 class="text-2xl font-bold text-gray-800 mb-2">Study Session Complete!</h3>
                     <p class="text-gray-600 mb-4">Great job! Your difficult cards will appear again sooner for better retention.</p>
-                    <button onclick="restartStudy()" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg">
-                        Study Again 🔄
-                    </button>
+                    <div class="flex justify-center space-x-4">
+                        <button onclick="restartStudy()" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg">
+                            Study Again 🔄
+                        </button>
+                        <button onclick="finishStudySession()" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg">
+                            Finish ✅
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1051,17 +1056,18 @@ INSTRUCTIONS:
 2. Focus on definitions, processes, cause-and-effect, and important facts
 3. Make questions specific to the actual content (not generic)
 4. Use engaging language with emojis
-5. Include explanations of why concepts are important
-${humorLine ? `6. ${humorLine}\n` : ''}
+5. Keep answers concise but complete - aim for 1-2 sentences per answer
+6. Avoid unnecessary explanations unless critical for understanding
+${humorLine ? `7. ${humorLine}\n` : ''}
 
 FORMAT (return exactly in this format):
 FLASHCARD 1:
 FRONT: [Question with emoji]
-BACK: [Answer with explanation and emoji]
+BACK: [Concise answer with emoji]
 
 FLASHCARD 2:
 FRONT: [Question with emoji]
-BACK: [Answer with explanation and emoji]
+BACK: [Concise answer with emoji]
 
 [Continue for all flashcards...]
 
@@ -1457,9 +1463,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const minIntervalDays = 5 / 1440; // 5 minutes
 
             if (difficulty === 'hard') {
-                // Hard button: ALWAYS 5 minutes, no rounding up
+                // Hard button: ALWAYS 5 minutes, reset ALL progress as if first viewing
                 interval = minIntervalDays;
                 newReps = 0; // Reset repetitions on hard
+                newEf = 2.5; // Reset ease factor to default on hard
             } else if (q >= 3) {
                 // Successful response
                 if (newReps === 0) {
@@ -2255,14 +2262,31 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     const req3 = sessionIndex.getAll(sessionRange);
                     req3.onsuccess = function() {
                         const sessions = req3.result || [];
+
+                        // Group sessions by cardId and find the most recent rating for each card
+                        const cardLatestRatings = {};
                         sessions.forEach(session => {
-                            if (session.difficulty === 'hard') {
+                            const cardId = session.flashcardId;
+                            const sessionTime = new Date(session.studiedAt).getTime();
+
+                            // Keep track of the most recent rating for each card
+                            if (!cardLatestRatings[cardId] ||
+                                sessionTime > cardLatestRatings[cardId].time) {
+                                cardLatestRatings[cardId] = {
+                                    difficulty: session.difficulty,
+                                    time: sessionTime,
+                                    cardId: cardId
+                                };
+                            }
+                        });
+
+                        // Count only cards whose MOST RECENT rating today is 'hard'
+                        Object.values(cardLatestRatings).forEach(latest => {
+                            if (latest.difficulty === 'hard') {
                                 // Find the card's category
-                                const cardId = session.flashcardId;
-                                // We need to look up the card to get its category
                                 const cardTx = db.transaction(['flashcards'], 'readonly');
                                 const cardStore = cardTx.objectStore('flashcards');
-                                const cardReq = cardStore.get(cardId);
+                                const cardReq = cardStore.get(latest.cardId);
                                 cardReq.onsuccess = function() {
                                     const card = cardReq.result;
                                     if (card) {
@@ -2358,6 +2382,15 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     revCountSpan.textContent = '';
                     el.appendChild(revCountSpan);
 
+                    // Hard cards review button (only if hardToday > 0)
+                    if (hardToday > 0) {
+                        const hardReviewBtn = document.createElement('button');
+                        hardReviewBtn.className = 'ml-2 text-xs text-red-600 hover:underline disabled:text-gray-400';
+                        hardReviewBtn.textContent = 'Review Hard';
+                        hardReviewBtn.onclick = function() { startHardCardsReview(item.id); };
+                        el.appendChild(hardReviewBtn);
+                    }
+
                     // Review button (last)
                     const reviewBtn = document.createElement('button');
                     reviewBtn.className = 'ml-4 text-xs text-blue-600 hover:underline disabled:text-gray-400';
@@ -2416,6 +2449,86 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     }
                 });
             });
+        }
+
+        function startHardCardsReview(categoryId) {
+            if (!db) return;
+
+            // Get today's study sessions to find hard-rated cards
+            const tx = db.transaction(['studySessions'], 'readonly');
+            const store = tx.objectStore('studySessions');
+            const sessionIndex = store.index('studiedAt');
+
+            const today = new Date();
+            const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+            const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999).toISOString();
+
+            const sessionRange = IDBKeyRange.bound(todayStart, todayEnd);
+            const req = sessionIndex.getAll(sessionRange);
+
+            req.onsuccess = function() {
+                const sessions = req.result || [];
+                const hardCardIds = new Set();
+
+                // Collect all card IDs that were rated as hard today
+                sessions.forEach(session => {
+                    if (session.difficulty === 'hard') {
+                        hardCardIds.add(session.flashcardId);
+                    }
+                });
+
+                if (hardCardIds.size === 0) {
+                    alert('No hard cards found for today.');
+                    return;
+                }
+
+                // Now get the actual card data for these IDs
+                const cardTx = db.transaction(['flashcards'], 'readonly');
+                const cardStore = cardTx.objectStore('flashcards');
+                const hardCards = [];
+
+                let processed = 0;
+                hardCardIds.forEach(cardId => {
+                    const cardReq = cardStore.get(cardId);
+                    cardReq.onsuccess = function() {
+                        const card = cardReq.result;
+                        if (card) {
+                            // Filter by category if specified
+                            const catKey = (card.categoryId === undefined || card.categoryId === null) ? '' : String(card.categoryId);
+                            if (String(categoryId) === String(catKey)) {
+                                hardCards.push(card);
+                            }
+                        }
+                        processed++;
+                        if (processed === hardCardIds.size) {
+                            // All cards processed, start review
+                            if (hardCards.length === 0) {
+                                alert('No hard cards found in this category for today.');
+                                return;
+                            }
+
+                            flashcards = hardCards;
+                            studyQueue = [...hardCards];
+                            currentCardIndex = 0;
+                            cardDifficulties = {};
+
+                            setupFlashcardStudy();
+                            showStep(3);
+                            setTimeout(() => {
+                                try {
+                                    if (typeof showCurrentCard === 'function') showCurrentCard();
+                                } catch (err) {
+                                    console.error('Error showing first hard card:', err);
+                                }
+                            }, 50);
+                        }
+                    };
+                });
+            };
+
+            req.onerror = function() {
+                alert('Error retrieving hard cards data.');
+            };
         }
 
         function startCategoryReview(categoryId) {
@@ -3373,6 +3486,10 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                         <div class="text-xs text-gray-500 mt-1">(3)</div>
                                     </div>
                                 </div>
+                                <div class="mt-4 flex justify-center gap-3">
+                                    <button onclick="editCurrentCard()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">✏️ Edit Card</button>
+                                    <button onclick="deleteCurrentCard()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">🗑️ Delete Card</button>
+                                </div>
                                 <div id="clozeShowAnswers" class="mt-4 text-base text-blue-900 font-semibold" style="display:none"></div>
                             </div>
                         </div>
@@ -3573,6 +3690,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             </div>
                             <div class="mt-4 flex items-center justify-center gap-3">
                                 <button onclick="openInlineCardConversation(${currentCardIndex}, this)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm">💬 Chat about this card</button>
+                                <button onclick="editCurrentCard()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">✏️ Edit Card</button>
+                                <button onclick="deleteCurrentCard()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">🗑️ Delete Card</button>
                                 <button onclick="flipCardBack()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">← Back to Question</button>
                             </div>
                         </div>
@@ -5021,6 +5140,21 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     putReq.onsuccess = function() {
                         document.getElementById('createCardModal') && document.getElementById('createCardModal').remove();
                         try { updateDashboard(); refreshCategoryReviewPanel(); refreshAllCategorySelects(); } catch(e){}
+                        
+                        // If we're in a review session, update the studyQueue with the new card data
+                        if (window.studyQueue && Array.isArray(window.studyQueue) && window.studyQueue.length > 0) {
+                            const editedCardIndex = window.studyQueue.findIndex(card => card.id === data.id);
+                            if (editedCardIndex !== -1) {
+                                // Update the card in studyQueue with the new data
+                                Object.assign(window.studyQueue[editedCardIndex], data);
+                                
+                                // If this is the current card being reviewed, refresh the display
+                                if (typeof window.currentCardIndex !== 'undefined' && window.currentCardIndex === editedCardIndex && typeof showCurrentCard === 'function') {
+                                    setTimeout(() => showCurrentCard(), 100);
+                                }
+                            }
+                        }
+                        
                         alert('Card updated');
                         window._editCard = null;
                         try { window._editedAudioFiles = []; window._pendingRecordedFiles = []; window._editedImageFiles = []; } catch(e){}
@@ -5665,6 +5799,145 @@ Make sure each flashcard tests something specific from the transcript content.`;
             document.getElementById('studyComplete').classList.remove('hidden');
         }
 
+        function finishStudySession() {
+            // Hide study complete screen
+            document.getElementById('studyComplete').classList.add('hidden');
+
+            // Return to the main screen (step 1 - the default screen users see when opening the app)
+            showStep(1);
+
+            // Refresh dashboard counts and panels
+            try {
+                updateDashboard();
+                refreshCategoryReviewPanel();
+                refreshAllCategorySelects();
+            } catch (e) {
+                console.error('Error refreshing dashboard:', e);
+            }
+
+            // Clear study session data
+            flashcards = [];
+            studyQueue = [];
+            currentCardIndex = 0;
+            cardDifficulties = {};
+        }        function deleteCurrentCard() {
+            if (currentCardIndex >= studyQueue.length) return;
+            
+            const cardToDelete = studyQueue[currentCardIndex];
+            
+            // Confirm deletion
+            if (!confirm(`Are you sure you want to delete this card?\n\nFront: ${cardToDelete.front}\nBack: ${cardToDelete.back}`)) {
+                return;
+            }
+            
+            // Delete from database
+            const transaction = db.transaction(['flashcards'], 'readwrite');
+            const store = transaction.objectStore('flashcards');
+            const request = store.delete(cardToDelete.id);
+            
+            request.onsuccess = function() {
+                // Remove from study queue
+                studyQueue.splice(currentCardIndex, 1);
+                
+                // If we deleted the last card, show study complete
+                if (studyQueue.length === 0) {
+                    showStudyComplete();
+                    return;
+                }
+                
+                // If we deleted a card that's not the last one, currentCardIndex stays the same
+                // (since we removed the current one, the next card shifts into this position)
+                
+                // Show the next card (which is now at currentCardIndex)
+                showCurrentCard();
+                
+                // Update dashboard counts
+                try {
+                    updateDashboard();
+                    refreshCategoryReviewPanel();
+                } catch (e) {
+                    console.error('Error refreshing dashboard after delete:', e);
+                }
+                
+                alert('Card deleted successfully.');
+            };
+            
+            request.onerror = function() {
+                alert('Error deleting card. Please try again.');
+                console.error('Delete error:', request.error);
+            };
+        }
+
+        function editCurrentCard() {
+            if (currentCardIndex >= studyQueue.length) return;
+            
+            const cardToEdit = studyQueue[currentCardIndex];
+            openCreateCardModal(cardToEdit);
+        }
+
+        function findDuplicateCards() {
+            if (!db) {
+                alert('Database not available');
+                return;
+            }
+            
+            const transaction = db.transaction(['flashcards'], 'readonly');
+            const store = transaction.objectStore('flashcards');
+            const request = store.getAll();
+            
+            request.onsuccess = function() {
+                const allCards = request.result;
+                if (allCards.length === 0) return;
+                
+                // Find duplicates based on normalized front and back content
+                const cardMap = new Map();
+                const duplicates = [];
+                
+                allCards.forEach(card => {
+                    const front = (card.front || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                    const back = (card.back || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                    const key = `${front}|${back}`;
+                    
+                    if (cardMap.has(key)) {
+                        // This is a duplicate
+                        if (!duplicates.some(d => d.key === key)) {
+                            duplicates.push({ key, cards: [cardMap.get(key), card] });
+                        } else {
+                            duplicates.find(d => d.key === key).cards.push(card);
+                        }
+                    } else {
+                        cardMap.set(key, card);
+                    }
+                });
+                
+                if (duplicates.length === 0) {
+                    alert('No duplicate cards found!');
+                    return;
+                }
+                
+                // Highlight duplicates in the table
+                duplicates.forEach(group => {
+                    group.cards.forEach(card => {
+                        const row = document.querySelector(`tr[data-cat] input[data-id="${card.id}"]`);
+                        if (row) {
+                            // Highlight the row
+                            row.closest('tr').style.backgroundColor = '#fef3c7'; // yellow background
+                            // Check the checkbox
+                            row.checked = true;
+                        }
+                    });
+                });
+                
+                // Show summary
+                const totalDuplicates = duplicates.reduce((sum, group) => sum + group.cards.length, 0);
+                alert(`Found ${duplicates.length} groups of duplicates (${totalDuplicates} cards total).\n\nDuplicate cards have been highlighted and selected for bulk deletion.`);
+            };
+            
+            request.onerror = function() {
+                alert('Error finding duplicates. Please try again.');
+            };
+        }
+
         function restartStudy() {
             setupFlashcardStudy();
             document.getElementById('flashcardContainer').classList.remove('hidden');
@@ -6040,6 +6313,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     let tableHtml = `<div style='display:flex;flex-direction:column;gap:8px;justify-content:space-between;align-items:stretch;margin-bottom:8px;'>
                         <div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap;'>
                             <button onclick="bulkDeleteSelected()" style='background:#e53e3e;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-right:6px;height:30px;'>Delete Selected</button>
+                            <button onclick="findDuplicateCards()" style='background:#d69e2e;color:white;padding:4px 8px;font-size:0.8rem;border:none;border-radius:4px;cursor:pointer;margin-right:6px;height:30px;'>🔍 Find Duplicates</button>
                             <select id='bulkCategorySelect' style='padding:6px;border-radius:6px;border:1px solid #ccc;height:30px;'>
                                 <option value=''>Set category...</option>
                             </select>
