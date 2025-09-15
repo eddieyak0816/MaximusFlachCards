@@ -1440,6 +1440,29 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
         // [Rest of the existing functions remain the same - calculateNextReview, saveFlashcard, etc.]
         
+        // Helper function to add random jitter to prevent review clustering
+        function getRandomJitter(intervalDays) {
+            // Convert interval to milliseconds for easier calculation
+            const intervalMs = intervalDays * 24 * 60 * 60 * 1000;
+            
+            let jitterMs;
+            if (intervalDays <= 1) {
+                // Short intervals (≤1 day): ±1-2 hours randomization
+                const maxJitter = 2 * 60 * 60 * 1000; // 2 hours in ms
+                jitterMs = (Math.random() - 0.5) * 2 * maxJitter;
+            } else if (intervalDays <= 7) {
+                // Medium intervals (1-7 days): ±4-8 hours randomization
+                const maxJitter = 8 * 60 * 60 * 1000; // 8 hours in ms
+                jitterMs = (Math.random() - 0.5) * 2 * maxJitter;
+            } else {
+                // Long intervals (7+ days): ±1-2 days randomization
+                const maxJitter = 2 * 24 * 60 * 60 * 1000; // 2 days in ms
+                jitterMs = (Math.random() - 0.5) * 2 * maxJitter;
+            }
+            
+            return Math.round(jitterMs); // Round to nearest millisecond
+        }
+        
     // Calculate next review using a simplified SM-2 style algorithm.
     // Defaults to the 'balanced' pacing preset if none is provided.
     // First-view behavior: hard -> 5 minutes, medium -> 1 day, easy -> 2 days.
@@ -1510,7 +1533,9 @@ Make sure each flashcard tests something specific from the transcript content.`;
 
             const nextReview = new Date();
             // interval is in days and may be fractional; convert to ms
-            nextReview.setTime(nextReview.getTime() + interval * 24 * 60 * 60 * 1000);
+            const baseIntervalMs = interval * 24 * 60 * 60 * 1000;
+            const jitterMs = getRandomJitter(interval);
+            nextReview.setTime(nextReview.getTime() + baseIntervalMs + jitterMs);
 
             return {
                 nextReview: nextReview.toISOString(),
