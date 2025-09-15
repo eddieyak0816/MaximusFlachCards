@@ -7,14 +7,62 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        :root {
+            --bg-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --bg-secondary: #ffffff;
+            --text-primary: #1f2937;
+            --text-secondary: #6b7280;
+            --border-color: #d1d5db;
+            --card-bg: #ffffff;
+            --button-bg: #3b82f6;
+            --button-hover: #2563eb;
+        }
+        .dark {
+            --bg-primary: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            --bg-secondary: #0f172a;
+            --text-primary: #ffffff; /* Pure white for maximum contrast */
+            --text-secondary: #cbd5e1; /* Lighter gray for better readability */
+            --border-color: #374151;
+            --card-bg: #1e293b;
+            --button-bg: #3b82f6;
+            --button-hover: #2563eb;
+        }
+        html {
+            background: var(--bg-primary);
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+        .main-card {
+            background: var(--card-bg);
+            color: var(--text-primary);
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+        .gradient-bg { background: var(--bg-primary); }
         .card-flip { transform-style: preserve-3d; transition: transform 0.6s; }
         .card-flip.flipped { transform: rotateY(180deg); }
         .card-front, .card-back { backface-visibility: hidden; }
         .card-back { transform: rotateY(180deg); }
         .pulse-animation { animation: pulse 2s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .dark-mode-toggle {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+        .dark-mode-toggle:hover {
+            background: var(--bg-secondary);
+        }
     </style>
 </head>
 <body class="gradient-bg min-h-screen">
@@ -27,14 +75,19 @@
         </div>
 
         <!-- Main Content -->
-        <div class="bg-white rounded-2xl shadow-2xl p-8" style="position:relative;">
-            <button id="openSettingsBtn" onclick="openSettingsModal()" aria-label="Open settings" style="position:absolute;top:12px;right:12px;background:transparent;border:none;cursor:pointer;padding:6px;border-radius:6px;" title="Settings">
-                <!-- gear icon -->
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z" stroke="#374151" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 0 1 4.27 16.9l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09c.65 0 1.2-.4 1.51-1a1.65 1.65 0 0 0-.33-1.82L4.3 6.27A2 2 0 0 1 7.13 3.44l.06.06c.5.5 1.27.65 1.82.33.45-.24 1-.38 1.51-.38H12c.5 0 1.06.12 1.51.38.55.32 1.32.17 1.82-.33l.06-.06A2 2 0 0 1 19.73 6.3l-.06.06c-.32.5-.17 1.27.16 1.82.24.45.38 1 .38 1.51V12c0 .5-.12 1.06-.38 1.51-.33.55-.48 1.32-.16 1.82l.06.06z" stroke="#374151" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </button>
+        <div class="bg-white rounded-2xl shadow-2xl p-8 main-card" style="position:relative;">
+            <div style="position:absolute;top:12px;right:12px;display:flex;gap:8px;">
+                <button id="darkModeToggle" onclick="toggleDarkMode()" class="dark-mode-toggle px-3 py-2 rounded-lg text-sm font-medium" title="Toggle Dark Mode">
+                    🌙 Dark Mode
+                </button>
+                <button id="openSettingsBtn" onclick="openSettingsModal()" aria-label="Open settings" style="background:transparent;border:none;cursor:pointer;padding:6px;border-radius:6px;" title="Settings">
+                    <!-- gear icon -->
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z" stroke="#374151" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 0 1 4.27 16.9l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09c.65 0 1.2-.4 1.51-1a1.65 1.65 0 0 0-.33-1.82L4.3 6.27A2 2 0 0 1 7.13 3.44l.06.06c.5.5 1.27.65 1.82.33.45-.24 1-.38 1.51-.38H12c.5 0 1.06.12 1.51.38.55.32 1.32.17 1.82-.33l.06-.06A2 2 0 0 1 19.73 6.3l-.06.06c-.32.5-.17 1.27.16 1.82.24.45.38 1 .38 1.51V12c0 .5-.12 1.06-.38 1.51-.33.55-.48 1.32-.16 1.82l.06.06z" stroke="#374151" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
             <div id="authArea" style="position:absolute;top:12px;right:68px;">
                 <span id="authStatus" style="font-size:0.9rem;color:#374151;margin-right:8px;"></span>
                 <button id="signInBtn" onclick="startSignIn()" style="padding:6px 8px;border-radius:6px;background:#2563eb;color:white;border:none;cursor:pointer;">Sign in</button>
@@ -7710,6 +7763,45 @@ window.sortAllCardsTable = function(col) {
         } catch (e) { console.error('Failed to load reading_adventure.js', e); }
 
         // IndexedDB diagnostic helper (shows a compact panel and allows export)
+        
+        // Dark mode functionality
+        function toggleDarkMode() {
+            const body = document.body;
+            const html = document.documentElement;
+            const toggleBtn = document.getElementById('darkModeToggle');
+            
+            if (body.classList.contains('dark')) {
+                body.classList.remove('dark');
+                html.classList.remove('dark');
+                toggleBtn.textContent = '🌙 Dark Mode';
+                localStorage.setItem('darkMode', 'false');
+            } else {
+                body.classList.add('dark');
+                html.classList.add('dark');
+                toggleBtn.textContent = '☀️ Light Mode';
+                localStorage.setItem('darkMode', 'true');
+            }
+        }
+
+        // Initialize dark mode on page load
+        function initDarkMode() {
+            const darkMode = localStorage.getItem('darkMode');
+            const toggleBtn = document.getElementById('darkModeToggle');
+            const html = document.documentElement;
+            
+            if (darkMode === 'true') {
+                document.body.classList.add('dark');
+                html.classList.add('dark');
+                toggleBtn.textContent = '☀️ Light Mode';
+            } else {
+                toggleBtn.textContent = '🌙 Dark Mode';
+            }
+        }
+
+        // Initialize dark mode when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            initDarkMode();
+        });
         
     </script>
     <!-- Supabase CDN and init (make sure supabase/supabaseInit.js contains your keys) -->
