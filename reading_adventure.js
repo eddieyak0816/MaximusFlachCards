@@ -3,9 +3,13 @@
 (function(){
     // Expose the function globally so inline onclick handlers work
     window.openReadingAdventure = function() {
-        // If modal already exists, bring into view
         try {
+            // If modal already exists, bring into view
             const existing = document.getElementById('readingAdventureModal');
+            if (existing) {
+                existing.style.display = 'flex';
+                return;
+            }
             if (existing) {
                 existing.style.display = 'flex';
                 return;
@@ -318,22 +322,62 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     }
                 }
 
-                // Render as simple pages with play buttons (TTS hook)
+                // Generate images for the story
+                pages.innerHTML = '<div style="color:#6b7280;">✨ Creating illustrations for your story...</div>';
+
+                const storyContext = { title, role, setting, plot, mood, transcript };
+                const imagePrompts = await generateImagePromptsForStory(paragraphs, storyContext);
+
+                pages.innerHTML = '<div style="color:#6b7280;">🎨 Generating beautiful images...</div>';
+
+                const imageResults = await generateImagesForStory(imagePrompts, storyContext);
+
+                // Render as picture book pages with images and play buttons
                 pages.innerHTML = '';
-                paragraphs.forEach((p,i) => {
+
+                // Check if we have any real AI-generated images vs fallbacks
+                const realImages = imageResults.filter(img => img.success && !img.isFallback).length;
+                const totalImages = imageResults.length;
+
+                if (realImages > 0) {
+                    const statusMsg = document.createElement('div');
+                    statusMsg.style.background = '#d1fae5';
+                    statusMsg.style.color = '#065f46';
+                    statusMsg.style.padding = '10px';
+                    statusMsg.style.borderRadius = '8px';
+                    statusMsg.style.marginBottom = '15px';
+                    statusMsg.style.textAlign = 'center';
+                    statusMsg.innerHTML = `🎨 Successfully generated ${realImages}/${totalImages} AI illustrations!`;
+                    pages.appendChild(statusMsg);
+                }
+
+                paragraphs.forEach((p, i) => {
                     const pWrap = document.createElement('div');
-                    pWrap.style.padding = '10px';
-                    pWrap.style.borderRadius = '8px';
-                    pWrap.style.marginBottom = '10px';
+                    pWrap.style.padding = '15px';
+                    pWrap.style.borderRadius = '12px';
+                    pWrap.style.marginBottom = '15px';
                     pWrap.style.background = '#f9fafb';
+                    pWrap.style.border = '2px solid #e5e7eb';
+
+                    const imageResult = imageResults.find(img => img.index === i);
+                    const imageHtml = imageResult && imageResult.success
+                        ? `<div style="position:relative;display:inline-block;">
+                            <img src="${imageResult.imageData}" alt="Story illustration" onclick="openFullscreenImage('${imageResult.imageData}')" style="width:300px;height:300px;object-fit:cover;border-radius:12px;margin-bottom:10px;border:3px solid #d1d5db;cursor:pointer;transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'" />
+                            <div style="position:absolute;bottom:15px;right:15px;background:rgba(0,0,0,0.7);color:white;padding:4px 8px;border-radius:6px;font-size:12px;pointer-events:none;opacity:0.8;">🔍 Click to enlarge</div>
+                          </div>`
+                        : `<div style="width:300px;height:300px;background:#f3f4f6;border:3px solid #d1d5db;border-radius:12px;margin-bottom:10px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:14px;">🎨 Image generation failed</div>`;
+
                     pWrap.innerHTML = `
-                        <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
-                            <div style="flex:1;">
-                                <h3 style="margin:0 0 6px 0;font-size:1rem;">${i===0?title:' '}</h3>
-                                <p style="margin:0;color:#111;">${escapeHtml(p)}</p>
+                        <div style="display:flex;gap:20px;align-items:flex-start;max-width:100%;">
+                            <div style="flex-shrink:0;">
+                                ${imageHtml}
                             </div>
-                            <div style="display:flex;flex-direction:column;gap:6px;margin-left:8px;">
-                                <button data-ra-play data-ra-text="${escapeAttr(p)}" style="background:#6366f1;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer;">🔊 Read</button>
+                            <div style="flex:1;min-width:0;">
+                                <h3 style="margin:0 0 8px 0;font-size:1.1rem;color:#1f2937;">${i === 0 ? title : ''}</h3>
+                                <p style="margin:0 0 12px 0;color:#111;line-height:1.5;">${escapeHtml(p)}</p>
+                                <button data-ra-play data-ra-text="${escapeAttr(p)}" style="background:#6366f1;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:14px;">
+                                    🔊 Read Aloud
+                                </button>
                             </div>
                         </div>
                     `;
@@ -410,6 +454,141 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
                 } catch (e) { return { success: false, reason: e.message }; }
             }
 
+            // Generate image using Gemini's image generation
+            async function generateImageWithGemini(imagePrompt) {
+                const apiKey = localStorage.getItem('gemini_api_key');
+                if (!apiKey) return { success: false, reason: 'no_key' };
+
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            prompt: {
+                                text: imagePrompt
+                            },
+                            generationConfig: {
+                                numberOfImages: 1,
+                                aspectRatio: "4:3",
+                                personGeneration: "allow_adult"
+                            }
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const err = await response.text();
+                        throw new Error('Gemini Image error: ' + err);
+                    }
+
+                    const data = await response.json();
+                    if (data.predictions && data.predictions[0] && data.predictions[0].bytesBase64Encoded) {
+                        return {
+                            success: true,
+                            imageData: `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`
+                        };
+                    } else {
+                        throw new Error('No image data received');
+                    }
+                } catch (e) {
+                    console.warn('Gemini image generation failed:', e);
+                    return { success: false, reason: e.message };
+                }
+            }
+
+            // Fallback image generation using placeholder/fallback method
+            function generateFallbackImage(storyContext, paragraphIndex) {
+                // Create a colorful SVG placeholder image
+                const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+                const color = colors[paragraphIndex % colors.length];
+
+                const svg = `
+                    <svg width="300" height="300" xmlns="http://www.w3.org/2000/svg">
+                        <rect width="300" height="300" fill="${color}" rx="12"/>
+                        <circle cx="150" cy="120" r="35" fill="white" opacity="0.8"/>
+                        <rect x="125" y="165" width="50" height="20" fill="white" opacity="0.8" rx="10"/>
+                        <text x="150" y="220" text-anchor="middle" fill="white" font-family="Arial" font-size="16" font-weight="bold">
+                            Page ${paragraphIndex + 1}
+                        </text>
+                        <text x="150" y="240" text-anchor="middle" fill="white" font-family="Arial" font-size="12">
+                            ${storyContext.role} Maximus
+                        </text>
+                    </svg>
+                `;
+
+                return `data:image/svg+xml;base64,${btoa(svg)}`;
+            }
+
+            // Generate image prompts for each paragraph
+            async function generateImagePromptsForStory(paragraphs, storyContext) {
+                const imagePrompts = [];
+
+                for (let i = 0; i < paragraphs.length; i++) {
+                    const paragraph = paragraphs[i];
+                    const prompt = `Create a detailed image description for a beautiful children's cartoon story illustration. The story is about ${storyContext.role} Maximus in ${storyContext.setting} with a ${storyContext.mood} mood.
+
+Paragraph content: "${paragraph}"
+
+Create a vivid, magical cartoon-style image prompt that captures the essence of this specific moment in the story. Focus on:
+- Cute, expressive cartoon characters with big eyes and friendly faces
+- Bright, vibrant colors and playful cartoon aesthetics
+- Whimsical and magical elements
+- Soft, rounded shapes and gentle curves
+- Storybook illustration style with depth and character
+- Age-appropriate for young children (4-8 years old)
+- High-quality digital cartoon art style
+
+Make it look like a beautiful page from a Disney or Pixar children's book. Return only the image prompt, no explanation.`;
+
+                    try {
+                        const result = await generateWithGemini(prompt);
+                        if (result.success && result.text) {
+                            imagePrompts.push(result.text.trim());
+                        } else {
+                            // Fallback prompt
+                            imagePrompts.push(`Beautiful cartoon illustration of ${storyContext.role} Maximus having an adventure in ${storyContext.setting}, cute expressive characters with big eyes, bright vibrant colors, whimsical magical elements, soft rounded shapes, Disney/Pixar style children's book illustration`);
+                        }
+                    } catch (e) {
+                        console.warn('Failed to generate image prompt for paragraph', i, e);
+                        imagePrompts.push(`Beautiful cartoon illustration of ${storyContext.role} Maximus having an adventure in ${storyContext.setting}, cute expressive characters with big eyes, bright vibrant colors, whimsical magical elements, soft rounded shapes, Disney/Pixar style children's book illustration`);
+                    }
+                }
+
+                return imagePrompts;
+            }
+
+            // Generate images for all paragraphs in parallel
+            async function generateImagesForStory(imagePrompts, storyContext) {
+                const imagePromises = imagePrompts.map(async (prompt, index) => {
+                    try {
+                        const result = await generateImageWithGemini(prompt);
+                        if (result.success) {
+                            return { success: true, imageData: result.imageData, index };
+                        } else {
+                            // Use fallback image
+                            console.warn('Using fallback image for paragraph', index);
+                            return {
+                                success: true,
+                                imageData: generateFallbackImage(storyContext, index),
+                                index,
+                                isFallback: true
+                            };
+                        }
+                    } catch (e) {
+                        console.warn('Image generation failed for paragraph', index, e);
+                        // Use fallback image
+                        return {
+                            success: true,
+                            imageData: generateFallbackImage(storyContext, index),
+                            index,
+                            isFallback: true
+                        };
+                    }
+                });
+
+                const results = await Promise.all(imagePromises);
+                return results;
+            }
+
             async function generateWithOpenAI(prompt) {
                 const apiKey = localStorage.getItem('openai_api_key');
                 if (!apiKey) return { success: false, reason: 'no_key' };
@@ -454,4 +633,38 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
         if (!s) return '';
         return String(s).replace(/"/g, '&quot;').replace(/\n/g,' ');
     }
+
+    // Fullscreen image viewer
+    window.openFullscreenImage = function(imageSrc) {
+        // Create fullscreen overlay
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100vw';
+        overlay.style.height = '100vh';
+        overlay.style.background = 'rgba(0,0,0,0.9)';
+        overlay.style.zIndex = '12000';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.cursor = 'pointer';
+
+        // Create the image
+        const img = document.createElement('img');
+        img.src = imageSrc;
+        img.style.maxWidth = '90vw';
+        img.style.maxHeight = '90vh';
+        img.style.objectFit = 'contain';
+        img.style.borderRadius = '8px';
+        img.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+
+        // Close on click
+        overlay.onclick = function() {
+            document.body.removeChild(overlay);
+        };
+
+        overlay.appendChild(img);
+        document.body.appendChild(overlay);
+    };
 })();
