@@ -7706,7 +7706,7 @@ window.sortAllCardsTable = function(col) {
         }
 
         function clearApiKeys() {
-            if (confirm('Are you sure you want to clear all API keys?')) {
+            if (confirm('Are you sure you want to clear all API keys? This will remove all your custom keys, but default keys will be restored.')) {
                 // Clear all API keys
                 localStorage.removeItem('gemini_api_keys');
                 localStorage.removeItem('openai_api_keys');
@@ -7740,7 +7740,11 @@ window.sortAllCardsTable = function(col) {
                     }
                 });
                 
-                alert('🗑️ All API keys cleared!');
+                // Re-initialize default keys
+                setTimeout(() => {
+                    initializeDefaultKeys();
+                    alert('🗑️ All custom API keys cleared! Default keys have been restored.');
+                }, 100);
             }
         }
 
@@ -7768,8 +7772,98 @@ window.sortAllCardsTable = function(col) {
             loadApiKeys('anthropic');
             loadApiKeys('huggingface');
             
+            // Restore legacy single keys if they exist and no array keys are saved
+            restoreLegacyKeys();
+            
             // Load enable/disable states
             loadApiSettings();
+        }
+
+        // Restore legacy single API keys to the new array format
+        function restoreLegacyKeys() {
+            const legacyKeys = {
+                'gemini': localStorage.getItem('gemini_api_key'),
+                'openai': localStorage.getItem('openai_api_key'),
+                'anthropic': localStorage.getItem('anthropic_api_key'),
+                'huggingface': localStorage.getItem('huggingface_api_key') || localStorage.getItem('hf_token')
+            };
+            
+            // For each provider, if no array keys exist but legacy key exists, restore it
+            let restoredLegacyCount = 0;
+            Object.entries(legacyKeys).forEach(([provider, legacyKey]) => {
+                if (legacyKey && !localStorage.getItem(`${provider}_api_keys`)) {
+                    // Save the legacy key in the new array format
+                    localStorage.setItem(`${provider}_api_keys`, JSON.stringify([legacyKey]));
+                    console.log(`✅ Restored legacy ${provider} key: ${legacyKey.substring(0, 10)}...`);
+                    restoredLegacyCount++;
+                    
+                    // Load it into the UI
+                    loadApiKeys(provider);
+                }
+            });
+            
+            if (restoredLegacyCount > 0) {
+                console.log(`🔄 Restored ${restoredLegacyCount} legacy API key(s)`);
+                showNotification(`🔄 Restored ${restoredLegacyCount} saved API key(s)`, 'success');
+            }
+            
+            // Initialize default Gemini key if no keys exist at all
+            initializeDefaultKeys();
+        }
+
+        // Initialize default API keys if none exist
+        function initializeDefaultKeys() {
+            const defaultKeys = {
+                'gemini': ['AIzaSyB0c_AloGTCpbvs0rKgi7xviL62aLzVqMk'], // Your original Gemini key
+                'openai': [],
+                'anthropic': [],
+                'huggingface': []
+            };
+            
+            let restoredCount = 0;
+            Object.entries(defaultKeys).forEach(([provider, keys]) => {
+                if (!localStorage.getItem(`${provider}_api_keys`) && keys.length > 0) {
+                    localStorage.setItem(`${provider}_api_keys`, JSON.stringify(keys));
+                    console.log(`✅ Initialized default ${provider} keys:`, keys.map(k => k.substring(0, 10) + '...'));
+                    restoredCount++;
+                    
+                    // Load them into the UI
+                    loadApiKeys(provider);
+                }
+            });
+            
+            if (restoredCount > 0) {
+                console.log(`🔄 Restored ${restoredCount} default API key(s)`);
+                
+                // Show a brief notification to the user
+                showNotification(`🔄 Restored ${restoredCount} default API key(s)`, 'info');
+            }
+        }
+
+        // Show a temporary notification to the user
+        function showNotification(message, type = 'info') {
+            // Remove any existing notifications
+            const existing = document.querySelector('.api-notification');
+            if (existing) existing.remove();
+            
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `api-notification fixed top-4 right-4 px-4 py-2 rounded-lg text-sm font-medium z-50 ${
+                type === 'success' ? 'bg-green-100 text-green-800 border border-green-300' :
+                type === 'error' ? 'bg-red-100 text-red-800 border border-red-300' :
+                'bg-blue-100 text-blue-800 border border-blue-300'
+            }`;
+            notification.textContent = message;
+            
+            // Add to page
+            document.body.appendChild(notification);
+            
+            // Auto-remove after 3 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 3000);
         }
 
         // Save API enable/disable settings
