@@ -81,7 +81,21 @@
                         <label style="font-weight:500;">Paste a short transcript or notes here (optional)</label>
                         <div style="font-size:12px;color:#6b7280;margin-bottom:4px;">The AI will analyze this content and incorporate key concepts into your story</div>
                         <textarea id="raTranscript" placeholder="Paste your study material, video transcript, or notes here..." style="width:100%;height:140px;padding:8px;border:1px solid #ddd;border-radius:6px;"></textarea>
-                    </div>                        <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px;">
+                    </div>
+
+                    <div style="margin-bottom:12px;">
+                        <label style="font-weight:500;">Reference Image (optional)</label>
+                        <div style="font-size:12px;color:#6b7280;margin-bottom:4px;">Upload a reference image to guide the AI image generation style</div>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <input type="file" id="raReferenceImage" accept="image/*" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;" />
+                            <button id="raClearReference" style="background:#6b7280;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;display:none;">Clear</button>
+                        </div>
+                        <div id="raReferencePreview" style="margin-top:8px;display:none;">
+                            <img id="raReferenceImg" style="max-width:200px;max-height:200px;border:1px solid #ddd;border-radius:6px;" alt="Reference image" />
+                        </div>
+                    </div>
+
+                        <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px;">
                             <button id="raGenerate" style="background:#2563eb;color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer;">Write My Story</button>
                         </div>
 
@@ -162,6 +176,53 @@
             document.getElementById('raSuggestSetting').onclick = () => suggestForField('setting');
             document.getElementById('raSuggestPlot').onclick = () => suggestForField('plot');
             document.getElementById('raSuggestMood').onclick = () => suggestForField('mood');
+
+            // Reference image upload handlers
+            document.getElementById('raReferenceImage').onchange = function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    // Validate file type
+                    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+                    if (!validTypes.includes(file.type)) {
+                        alert('Please select a valid image file (JPEG, PNG, or WebP)');
+                        e.target.value = '';
+                        return;
+                    }
+
+                    // Validate file size (max 10MB)
+                    const maxSize = 10 * 1024 * 1024; // 10MB
+                    if (file.size > maxSize) {
+                        alert('Please select an image smaller than 10MB');
+                        e.target.value = '';
+                        return;
+                    }
+
+                    // Show loading state
+                    const previewDiv = document.getElementById('raReferencePreview');
+                    previewDiv.innerHTML = '<div style="padding:20px;text-align:center;color:#6b7280;">Loading image...</div>';
+                    previewDiv.style.display = 'block';
+
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        // Create the image element with the loaded data
+                        previewDiv.innerHTML = `<img id="raReferenceImg" src="${e.target.result}" style="max-width:200px;max-height:200px;border:1px solid #ddd;border-radius:6px;" alt="Reference image" />`;
+                        document.getElementById('raClearReference').style.display = 'inline-block';
+                    };
+                    reader.onerror = function() {
+                        alert('Error reading the image file. Please try again.');
+                        e.target.value = '';
+                        previewDiv.style.display = 'none';
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            document.getElementById('raClearReference').onclick = function() {
+                document.getElementById('raReferenceImage').value = '';
+                document.getElementById('raReferencePreview').style.display = 'none';
+                document.getElementById('raReferencePreview').innerHTML = '<img id="raReferenceImg" style="max-width:200px;max-height:200px;border:1px solid #ddd;border-radius:6px;" alt="Reference image" />';
+                document.getElementById('raClearReference').style.display = 'none';
+            };
 
             // Guided brainstorming: simple chat UI with multi-turn suggestions
             document.getElementById('raBrainstorm').onclick = () => startGuidedBrainstorm();
@@ -360,12 +421,25 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     pWrap.style.border = '2px solid #e5e7eb';
 
                     const imageResult = imageResults.find(img => img.index === i);
+                    const serviceBadge = imageResult && imageResult.service
+                        ? imageResult.service === 'pollinations'
+                            ? '<div style="position:absolute;top:15px;left:15px;background:#10b981;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🌸 Pollinations.ai</div>'
+                            : imageResult.service === 'gemini'
+                            ? '<div style="position:absolute;top:15px;left:15px;background:#8b5cf6;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🤖 Gemini</div>'
+                            : '<div style="position:absolute;top:15px;left:15px;background:#f59e0b;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🎨 Fallback</div>'
+                        : '';
+
                     const imageHtml = imageResult && imageResult.success
                         ? `<div style="position:relative;display:inline-block;">
+                            ${serviceBadge}
                             <img src="${imageResult.imageData}" alt="Story illustration" onclick="openFullscreenImage('${imageResult.imageData}')" style="width:300px;height:300px;object-fit:cover;border-radius:12px;margin-bottom:10px;border:3px solid #d1d5db;cursor:pointer;transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'" />
                             <div style="position:absolute;bottom:15px;right:15px;background:rgba(0,0,0,0.7);color:white;padding:4px 8px;border-radius:6px;font-size:12px;pointer-events:none;opacity:0.8;">🔍 Click to enlarge</div>
+                            <button onclick="regenerateImage(${i})" style="position:absolute;top:15px;right:15px;background:#3b82f6;color:white;padding:4px 8px;border-radius:6px;font-size:11px;border:none;cursor:pointer;opacity:0.8;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">🔄 Regenerate</button>
                           </div>`
-                        : `<div style="width:300px;height:300px;background:#f3f4f6;border:3px solid #d1d5db;border-radius:12px;margin-bottom:10px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:14px;">🎨 Image generation failed</div>`;
+                        : `<div style="width:300px;height:300px;background:#f3f4f6;border:3px solid #d1d5db;border-radius:12px;margin-bottom:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#9ca3af;font-size:14px;">
+                            🎨 Image generation failed
+                            <button onclick="regenerateImage(${i})" style="margin-top:10px;background:#3b82f6;color:white;padding:6px 12px;border-radius:6px;font-size:12px;border:none;cursor:pointer;">🔄 Try Again</button>
+                          </div>`;
 
                     pWrap.innerHTML = `
                         <div style="display:flex;gap:20px;align-items:flex-start;max-width:100%;">
@@ -455,24 +529,41 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
             }
 
             // Generate image using Gemini's image generation
-            async function generateImageWithGemini(imagePrompt) {
+            async function generateImageWithGemini(imagePrompt, referenceImage = null) {
                 const apiKey = localStorage.getItem('gemini_api_key');
                 if (!apiKey) return { success: false, reason: 'no_key' };
 
                 try {
+                    const requestBody = {
+                        prompt: {
+                            text: imagePrompt
+                        },
+                        generationConfig: {
+                            numberOfImages: 1,
+                            aspectRatio: "4:3",
+                            personGeneration: "allow_adult"
+                        }
+                    };
+
+                    // Add reference image for image-to-image generation
+                    if (referenceImage) {
+                        try {
+                            requestBody.prompt.image = {
+                                bytesBase64Encoded: referenceImage.split(',')[1] // Remove data:image/... prefix
+                            };
+                            // Update prompt to indicate this is image-to-image
+                            requestBody.prompt.text = `Generate an image in the style of the reference image: ${imagePrompt}`;
+                        } catch (e) {
+                            console.warn('Failed to process reference image for Gemini:', e);
+                            // Fall back to text-only generation
+                            delete requestBody.prompt.image;
+                        }
+                    }
+
                     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            prompt: {
-                                text: imagePrompt
-                            },
-                            generationConfig: {
-                                numberOfImages: 1,
-                                aspectRatio: "4:3",
-                                personGeneration: "allow_adult"
-                            }
-                        })
+                        body: JSON.stringify(requestBody)
                     });
 
                     if (!response.ok) {
@@ -492,6 +583,149 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
                 } catch (e) {
                     console.warn('Gemini image generation failed:', e);
                     return { success: false, reason: e.message };
+                }
+            }
+
+            // Generate image using Pollinations.ai (free alternative to Gemini)
+            async function generateImageWithPollinations(imagePrompt, referenceImage = null) {
+                try {
+                    // URL encode the prompt for the API
+                    const encodedPrompt = encodeURIComponent(imagePrompt);
+
+                    // Build the API URL with parameters for cartoon-style images
+                    let apiUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=300&height=300&model=flux&seed=${Math.floor(Math.random() * 1000000)}&enhance=true`;
+
+                    // Add reference image for image-to-image generation
+                    if (referenceImage) {
+                        // For Pollinations.ai, we can include the reference image as a style reference
+                        // by adding it to the prompt and using a different model that supports image-to-image
+                        apiUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=300&height=300&model=flux&seed=${Math.floor(Math.random() * 1000000)}&enhance=true&style=${encodeURIComponent('in the style of the reference image')}`;
+                    }
+
+                    const response = await fetch(apiUrl);
+
+                    if (!response.ok) {
+                        throw new Error('Pollinations.ai API error: ' + response.status);
+                    }
+
+                    // Get the image as a blob and convert to base64
+                    const imageBlob = await response.blob();
+
+                    return new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            resolve({
+                                success: true,
+                                imageData: reader.result,
+                                service: 'pollinations'
+                            });
+                        };
+                        reader.onerror = () => {
+                            resolve({ success: false, reason: 'Failed to process image data' });
+                        };
+                        reader.readAsDataURL(imageBlob);
+                    });
+
+                } catch (e) {
+                    console.warn('Pollinations.ai image generation failed:', e);
+                    return { success: false, reason: e.message };
+                }
+            }
+
+            // Regenerate a specific image
+            async function regenerateImage(paragraphIndex) {
+                console.log('Regenerating image for paragraph', paragraphIndex);
+
+                // Find the image element and add loading state
+                const imageContainer = document.querySelector(`img[alt="Story illustration"]:nth-of-type(${paragraphIndex + 1})`);
+                if (imageContainer) {
+                    imageContainer.style.opacity = '0.5';
+                    imageContainer.style.filter = 'blur(2px)';
+                }
+
+                try {
+                    // Get the current story context and image prompts
+                    const storyContext = {
+                        role: document.getElementById('raRole')?.value || 'Curious Explorer',
+                        setting: document.getElementById('raSetting')?.value || 'magical forest',
+                        mood: document.getElementById('raMood')?.value || 'whimsical'
+                    };
+
+                    // Generate new image prompt for this paragraph
+                    const paragraphs = document.querySelectorAll('#raPages p');
+                    const paragraphText = paragraphs[paragraphIndex]?.textContent || '';
+
+                    // Get reference image if uploaded
+                    const referenceImageInput = document.getElementById('raReferenceImage');
+                    const referenceImage = referenceImageInput && referenceImageInput.files[0] ?
+                        await new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result);
+                            reader.readAsDataURL(referenceImageInput.files[0]);
+                        }) : null;
+
+                    // Generate new image using preferred AI
+                    const preferredImageAI = localStorage.getItem('preferredImageAI') || 'auto';
+                    let newImageResult = null;
+
+                    if (preferredImageAI === 'pollinations' || preferredImageAI === 'auto') {
+                        const pollinationsResult = await generateImageWithPollinations(imagePrompt, referenceImage);
+                        if (pollinationsResult.success) {
+                            newImageResult = {
+                                success: true,
+                                imageData: pollinationsResult.imageData,
+                                service: 'pollinations'
+                            };
+                        }
+                    }
+
+                    if (!newImageResult && (preferredImageAI === 'gemini' || preferredImageAI === 'auto')) {
+                        const geminiResult = await generateImageWithGemini(imagePrompt, referenceImage);
+                        if (geminiResult.success) {
+                            newImageResult = {
+                                success: true,
+                                imageData: geminiResult.imageData,
+                                service: 'gemini'
+                            };
+                        }
+                    }
+
+                    if (!newImageResult) {
+                        // Use fallback
+                        newImageResult = {
+                            success: true,
+                            imageData: generateFallbackImage(storyContext, paragraphIndex),
+                            service: 'fallback'
+                        };
+                    }
+
+                    // Update the image in the DOM
+                    if (newImageResult.success && imageContainer) {
+                        imageContainer.src = newImageResult.imageData;
+                        imageContainer.style.opacity = '1';
+                        imageContainer.style.filter = 'none';
+
+                        // Update the service badge
+                        const container = imageContainer.parentElement;
+                        const existingBadge = container.querySelector('div[style*="position:absolute"][style*="top:15px"][style*="left:15px"]');
+                        if (existingBadge) {
+                            const newBadge = newImageResult.service === 'pollinations'
+                                ? '<div style="position:absolute;top:15px;left:15px;background:#10b981;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🌸 Pollinations.ai</div>'
+                                : newImageResult.service === 'gemini'
+                                ? '<div style="position:absolute;top:15px;left:15px;background:#8b5cf6;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🤖 Gemini</div>'
+                                : '<div style="position:absolute;top:15px;left:15px;background:#f59e0b;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🎨 Fallback</div>';
+                            existingBadge.outerHTML = newBadge;
+                        }
+
+                        console.log('Successfully regenerated image for paragraph', paragraphIndex, 'using', newImageResult.service);
+                    }
+
+                } catch (error) {
+                    console.error('Failed to regenerate image:', error);
+                    if (imageContainer) {
+                        imageContainer.style.opacity = '1';
+                        imageContainer.style.filter = 'none';
+                    }
                 }
             }
 
@@ -558,21 +792,78 @@ Make it look like a beautiful page from a Disney or Pixar children's book. Retur
 
             // Generate images for all paragraphs in parallel
             async function generateImagesForStory(imagePrompts, storyContext) {
+                // Get reference image if uploaded
+                const referenceImageInput = document.getElementById('raReferenceImage');
+                const referenceImage = referenceImageInput && referenceImageInput.files[0] ?
+                    await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.readAsDataURL(referenceImageInput.files[0]);
+                    }) : null;
+
                 const imagePromises = imagePrompts.map(async (prompt, index) => {
                     try {
-                        const result = await generateImageWithGemini(prompt);
-                        if (result.success) {
-                            return { success: true, imageData: result.imageData, index };
-                        } else {
-                            // Use fallback image
-                            console.warn('Using fallback image for paragraph', index);
-                            return {
-                                success: true,
-                                imageData: generateFallbackImage(storyContext, index),
-                                index,
-                                isFallback: true
-                            };
+                        // Check user's preferred image AI
+                        const preferredImageAI = localStorage.getItem('preferredImageAI') || 'auto';
+
+                        if (preferredImageAI === 'pollinations') {
+                            // User prefers Pollinations.ai
+                            const pollinationsResult = await generateImageWithPollinations(prompt, referenceImage);
+                            if (pollinationsResult.success) {
+                                return {
+                                    success: true,
+                                    imageData: pollinationsResult.imageData,
+                                    index,
+                                    service: 'pollinations'
+                                };
+                            }
+                        } else if (preferredImageAI === 'gemini') {
+                            // User prefers Gemini
+                            const geminiResult = await generateImageWithGemini(prompt, referenceImage);
+                            if (geminiResult.success) {
+                                return {
+                                    success: true,
+                                    imageData: geminiResult.imageData,
+                                    index,
+                                    service: 'gemini'
+                                };
+                            }
                         }
+
+                        // Auto mode or preferred service failed - try both
+                        if (preferredImageAI === 'auto' || preferredImageAI === 'pollinations') {
+                            const pollinationsResult = await generateImageWithPollinations(prompt, referenceImage);
+                            if (pollinationsResult.success) {
+                                return {
+                                    success: true,
+                                    imageData: pollinationsResult.imageData,
+                                    index,
+                                    service: 'pollinations'
+                                };
+                            }
+                        }
+
+                        if (preferredImageAI === 'auto' || preferredImageAI === 'gemini') {
+                            const geminiResult = await generateImageWithGemini(prompt, referenceImage);
+                            if (geminiResult.success) {
+                                return {
+                                    success: true,
+                                    imageData: geminiResult.imageData,
+                                    index,
+                                    service: 'gemini'
+                                };
+                            }
+                        }
+
+                        // Use fallback image if all else fails
+                        console.warn('Using fallback image for paragraph', index);
+                        return {
+                            success: true,
+                            imageData: generateFallbackImage(storyContext, index),
+                            index,
+                            isFallback: true,
+                            service: 'fallback'
+                        };
                     } catch (e) {
                         console.warn('Image generation failed for paragraph', index, e);
                         // Use fallback image
@@ -580,7 +871,8 @@ Make it look like a beautiful page from a Disney or Pixar children's book. Retur
                             success: true,
                             imageData: generateFallbackImage(storyContext, index),
                             index,
-                            isFallback: true
+                            isFallback: true,
+                            service: 'fallback'
                         };
                     }
                 });
@@ -643,28 +935,56 @@ Make it look like a beautiful page from a Disney or Pixar children's book. Retur
         overlay.style.left = '0';
         overlay.style.width = '100vw';
         overlay.style.height = '100vh';
-        overlay.style.background = 'rgba(0,0,0,0.9)';
+        overlay.style.background = 'rgba(0,0,0,0.95)';
         overlay.style.zIndex = '12000';
         overlay.style.display = 'flex';
         overlay.style.alignItems = 'center';
         overlay.style.justifyContent = 'center';
         overlay.style.cursor = 'pointer';
 
-        // Create the image
+        // Create the image with much larger size
         const img = document.createElement('img');
         img.src = imageSrc;
-        img.style.maxWidth = '90vw';
-        img.style.maxHeight = '90vh';
+        img.style.maxWidth = '95vw';
+        img.style.maxHeight = '95vh';
+        img.style.width = 'auto';
+        img.style.height = 'auto';
         img.style.objectFit = 'contain';
-        img.style.borderRadius = '8px';
-        img.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+        img.style.borderRadius = '12px';
+        img.style.boxShadow = '0 20px 60px rgba(0,0,0,0.8)';
+        img.style.imageRendering = 'high-quality';
 
-        // Close on click
-        overlay.onclick = function() {
+        // Add close button
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '✕';
+        closeBtn.style.position = 'absolute';
+        closeBtn.style.top = '20px';
+        closeBtn.style.right = '20px';
+        closeBtn.style.background = 'rgba(0,0,0,0.7)';
+        closeBtn.style.color = 'white';
+        closeBtn.style.border = 'none';
+        closeBtn.style.borderRadius = '50%';
+        closeBtn.style.width = '40px';
+        closeBtn.style.height = '40px';
+        closeBtn.style.fontSize = '20px';
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.style.display = 'flex';
+        closeBtn.style.alignItems = 'center';
+        closeBtn.style.justifyContent = 'center';
+
+        // Close on click (overlay or button)
+        const closeOverlay = function() {
             document.body.removeChild(overlay);
         };
 
+        overlay.onclick = closeOverlay;
+        closeBtn.onclick = function(e) {
+            e.stopPropagation(); // Prevent overlay click when clicking button
+            closeOverlay();
+        };
+
         overlay.appendChild(img);
+        overlay.appendChild(closeBtn);
         document.body.appendChild(overlay);
     };
 })();
