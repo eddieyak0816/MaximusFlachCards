@@ -1,0 +1,84 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Suggest Test</title>
+</head>
+<body>
+    <h1>AI Suggest Button Test</h1>
+    
+    <div>
+        <label>Title: </label>
+        <input id="raTitle" placeholder="Story title" />
+        <button onclick="testSuggest('title')">Test AI Suggest Title</button>
+    </div>
+    
+    <div>
+        <label>Setting: </label>
+        <input id="raSetting" placeholder="Story setting" />
+        <button onclick="testSuggest('setting')">Test AI Suggest Setting</button>
+    </div>
+    
+    <div>
+        <label>Plot: </label>
+        <input id="raPlot" placeholder="Story plot" />
+        <button onclick="testSuggest('plot')">Test AI Suggest Plot</button>
+    </div>
+    
+    <div>
+        <label>Mood: </label>
+        <select id="raMood">
+            <option value="whimsical">Whimsical</option>
+            <option value="adventurous">Adventurous</option>
+            <option value="calm">Calm</option>
+            <option value="mysterious">Mysterious</option>
+        </select>
+        <button onclick="testSuggest('mood')">Test AI Suggest Mood</button>
+    </div>
+    
+    <div>
+        <label>Role: </label>
+        <select id="raRole">
+            <option value="Curious Explorer">Curious Explorer</option>
+            <option value="Brave Knight">Brave Knight</option>
+        </select>
+    </div>
+    
+    <div>
+        <label>Transcript: </label>
+        <textarea id="raTranscript" placeholder="Study material"></textarea>
+    </div>
+    
+    <script>
+        // Mock the suggestField function for testing
+        window.testSuggest = function(field) {
+            console.log("Testing AI suggest for:", field);
+            
+            const current = {
+                title: document.getElementById("raTitle").value,
+                role: document.getElementById("raRole").value,
+                setting: document.getElementById("raSetting").value,
+                mood: document.getElementById("raMood").value,
+                transcript: document.getElementById("raTranscript").value
+            };
+            
+            console.log("Current values:", current);
+            
+            let prompt = "";
+            if (field === "title") {
+                prompt = "Suggest a creative, engaging title for a children\'s story about " + current.role + " Maximus. The story has a " + current.mood + " mood and takes place in " + current.setting + ". Keep it short (3-8 words) and age-appropriate for children 4-8 years old. Return only the title, no explanation.";
+            } else if (field === "setting") {
+                prompt = "Suggest an imaginative, magical setting for a children\'s story about " + current.role + " Maximus. The story has a " + current.mood + " mood. Make it engaging and suitable for young children. Return only the setting description (2-6 words), no explanation.";
+            } else if (field === "plot") {
+                prompt = "Suggest an exciting plot twist or challenge for a children\'s story about " + current.role + " Maximus in " + current.setting + " with a " + current.mood + " mood. Keep it age-appropriate and positive. Return only the plot idea (5-15 words), no explanation.";
+            } else if (field === "mood") {
+                prompt = "Based on the story elements (character: " + current.role + " Maximus, setting: " + current.setting + ", plot: " + current.plot + "), suggest the most appropriate mood from these options: whimsical, adventurous, calm, mysterious. Return only one word from the options.";
+            }
+            
+            console.log("Generated prompt:", prompt);
+            alert("Prompt generated successfully! Check console for details.");
+        };
+        
+        console.log("AI Suggest test page loaded");
+    </script>
+</body>
+</html>

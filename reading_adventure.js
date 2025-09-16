@@ -1,4 +1,4 @@
-// reading_adventure.js
+﻿// reading_adventure.js
 // Minimal Reading Adventure scaffold. All feature code for the Reading Adventure goes in this file.
 (function(){
     // Expose the function globally so inline onclick handlers work
@@ -10,6 +10,9 @@
                 existing.style.display = 'flex';
                 return;
             }
+
+            // Make regenerateImage callable from modal buttons / inline handlers
+            window.regenerateImage = regenerateImage;
             if (existing) {
                 existing.style.display = 'flex';
                 return;
@@ -466,6 +469,312 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     };
                 });
 
+                // Book modal: creates a popup styled like an open book with page-turning
+                function openBookModal(pagesContent, imageResults = []) {
+                    // If modal exists, reuse
+                    let modal = document.getElementById('raBookModal');
+                    if (modal) {
+                        modal.parentNode.removeChild(modal);
+                    }
+
+                    modal = document.createElement('div');
+                    modal.id = 'raBookModal';
+                    modal.style.position = 'fixed';
+                    modal.style.top = '0';
+                    modal.style.left = '0';
+                    modal.style.width = '100vw';
+                    modal.style.height = '100vh';
+                    modal.style.background = 'rgba(0,0,0,0.6)';
+                    modal.style.display = 'flex';
+                    modal.style.alignItems = 'center';
+                    modal.style.justifyContent = 'center';
+                    modal.style.zIndex = 13000;
+
+                    const book = document.createElement('div');
+                    book.id = 'raBook';
+                    book.style.width = 'min(1000px,94vw)';
+                    book.style.height = 'min(640px,86vh)';
+                    book.style.background = '#f7f3ef';
+                    book.style.borderRadius = '8px';
+                    book.style.boxShadow = '0 10px 30px rgba(0,0,0,0.35)';
+                    book.style.display = 'flex';
+                    book.style.alignItems = 'center';
+                    book.style.justifyContent = 'center';
+                    book.style.position = 'relative';
+                    book.style.overflow = 'hidden';
+
+                    // Inner container for pages
+                    const pagesContainer = document.createElement('div');
+                    pagesContainer.id = 'raBookPages';
+                    pagesContainer.style.width = '100%';
+                    pagesContainer.style.height = '100%';
+                    pagesContainer.style.display = 'flex';
+                    pagesContainer.style.alignItems = 'center';
+                    pagesContainer.style.justifyContent = 'center';
+                    pagesContainer.style.padding = '24px';
+                    pagesContainer.style.boxSizing = 'border-box';
+
+                    // Page width and height - larger so two pages fill the modal nicely
+                    const modalInnerWidth = Math.min(1000, window.innerWidth * 0.94 - 48);
+                    const pageWidth = Math.floor((modalInnerWidth - 48) / 2);
+                    const pageHeight = Math.floor(Math.min(720, window.innerHeight * 0.86 - 48));
+
+                    // Build page elements (two pages visible at a time: left and right)
+                    const pageElements = [];
+                    for (let i = 0; i < pagesContent.length; i++) {
+                        const p = document.createElement('div');
+                        p.className = 'raBookPage';
+                        p.style.width = pageWidth + 'px';
+                        p.style.height = pageHeight + 'px';
+                        p.style.background = 'white';
+                        p.style.borderRadius = '6px';
+                        p.style.boxShadow = 'inset 0 1px 0 rgba(0,0,0,0.03), 0 6px 18px rgba(0,0,0,0.08)';
+                        p.style.margin = '0 8px';
+                        p.style.padding = '18px';
+                        p.style.boxSizing = 'border-box';
+                        p.style.overflow = 'hidden';
+                        p.style.display = 'flex';
+                        p.style.flexDirection = 'column';
+                        p.style.justifyContent = 'space-between';
+
+                        // Add image (if available)
+                        const imgWrap = document.createElement('div');
+                        imgWrap.style.flex = '0 0 auto';
+                        imgWrap.style.textAlign = 'center';
+                        if (imageResults[i] && imageResults[i].imageData) {
+                            const img = document.createElement('img');
+                            img.src = imageResults[i].imageData;
+                            img.style.maxWidth = '100%';
+                            img.style.maxHeight = (pageHeight * 0.55) + 'px';
+                            img.style.borderRadius = '8px';
+                            img.style.objectFit = 'cover';
+                            img.alt = 'Story illustration';
+                            img.style.cursor = 'pointer';
+
+                            // Click to open large image (1024x768)
+                            img.addEventListener('click', async () => {
+                                // If the existing image was generated by a service, try to request a larger version
+                                try {
+                                    // Prefer Gemini then Pollinations
+                                    const preferred = localStorage.getItem('preferredImageAI') || 'auto';
+                                    let largeResult = null;
+                                    if (preferred === 'gemini' || preferred === 'auto') {
+                                        largeResult = await generateImageWithGemini(imagePromptForIndex(i) , null, { width: 1024, height: 768 });
+                                    }
+                                    if ((!largeResult || !largeResult.success) && (preferred === 'pollinations' || preferred === 'auto')) {
+                                        largeResult = await generateImageWithPollinations(imagePromptForIndex(i), null, { width: 1024, height: 768 });
+                                    }
+                                    if (!largeResult || !largeResult.success) {
+                                        largeResult = { success: true, imageData: generateFallbackImage({ role: document.getElementById('raRole')?.value || 'Curious Explorer' }, i) };
+                                    }
+                                    if (largeResult && largeResult.success) {
+                                        // Open fullscreen with size 1024x768 enforced by the container
+                                        openFullscreenImage(largeResult.imageData, 1024, 768);
+                                    }
+                                } catch (e) { console.warn('Large image load failed', e); }
+                            });
+
+                            imgWrap.appendChild(img);
+
+                            // regeneration button
+                            const regen = document.createElement('button');
+                            regen.textContent = '🔄 Regenerate';
+                            regen.style.marginTop = '8px';
+                            regen.style.background = '#3b82f6';
+                            regen.style.color = 'white';
+                            regen.style.border = 'none';
+                            regen.style.padding = '6px 10px';
+                            regen.style.borderRadius = '6px';
+                            regen.style.cursor = 'pointer';
+                            regen.onclick = () => { window.regenerateImage(i); };
+                            imgWrap.appendChild(regen);
+                        }
+
+                        const textWrap = document.createElement('div');
+                        textWrap.style.flex = '1 1 auto';
+                        textWrap.style.marginTop = '8px';
+                        textWrap.style.overflowY = 'auto';
+                        textWrap.style.fontSize = '16px';
+                        textWrap.style.color = '#111827';
+
+                        textWrap.innerHTML = `<h3 style="margin:0 0 8px 0;font-size:1.1rem;">${pagesContent[i].title || ''}</h3><div style="white-space:pre-wrap">${pagesContent[i].text}</div>`;
+
+                        // Add TTS read button under the text
+                        const ttsBtn = document.createElement('button');
+                        ttsBtn.textContent = '🔈 Read';
+                        ttsBtn.style.marginTop = '10px';
+                        ttsBtn.style.background = '#f59e0b';
+                        ttsBtn.style.color = 'white';
+                        ttsBtn.style.border = 'none';
+                        ttsBtn.style.padding = '8px 10px';
+                        ttsBtn.style.borderRadius = '8px';
+                        ttsBtn.style.cursor = 'pointer';
+                        ttsBtn.onclick = () => {
+                            try {
+                                const utter = new SpeechSynthesisUtterance(pagesContent[i].text);
+                                utter.rate = 0.95;
+                                utter.pitch = 1;
+                                window.speechSynthesis.cancel();
+                                window.speechSynthesis.speak(utter);
+                            } catch (e) { console.warn('TTS failed', e); }
+                        };
+                        textWrap.appendChild(ttsBtn);
+
+                        p.appendChild(imgWrap);
+                        p.appendChild(textWrap);
+                        pageElements.push(p);
+                    }
+
+                    // Create view that shows two pages side-by-side
+                    const view = document.createElement('div');
+                    view.id = 'raBookView';
+                    view.style.display = 'flex';
+                    view.style.alignItems = 'center';
+                    view.style.justifyContent = 'center';
+                    view.style.width = '100%';
+                    view.style.height = '100%';
+                    view.style.transition = 'transform 0.45s cubic-bezier(0.22, 1, 0.36, 1)';
+                    view.style.willChange = 'transform';
+
+                    // Inner strip that will slide left/right
+                    const strip = document.createElement('div');
+                    strip.id = 'raBookStrip';
+                    strip.style.display = 'flex';
+                    strip.style.alignItems = 'center';
+                    strip.style.justifyContent = 'center';
+                    strip.style.gap = '16px';
+                    strip.style.padding = '12px';
+                    strip.style.boxSizing = 'border-box';
+
+                    // Append each page to the strip
+                    pageElements.forEach(pe => strip.appendChild(pe));
+
+                    view.appendChild(strip);
+                    pagesContainer.appendChild(view);
+                    book.appendChild(pagesContainer);
+
+                    // Controls
+                    const controls = document.createElement('div');
+                    controls.style.position = 'absolute';
+                    controls.style.bottom = '18px';
+                    controls.style.left = '50%';
+                    controls.style.transform = 'translateX(-50%)';
+                    controls.style.display = 'flex';
+                    controls.style.gap = '12px';
+
+                    const prevBtn = document.createElement('button');
+                    prevBtn.textContent = '◀ Prev';
+                    prevBtn.style.padding = '10px 14px';
+                    prevBtn.style.borderRadius = '8px';
+                    prevBtn.style.border = 'none';
+                    prevBtn.style.background = '#e5e7eb';
+                    prevBtn.style.cursor = 'pointer';
+
+                    const nextBtn = document.createElement('button');
+                    nextBtn.textContent = 'Next ▶';
+                    nextBtn.style.padding = '10px 14px';
+                    nextBtn.style.borderRadius = '8px';
+                    nextBtn.style.border = 'none';
+                    nextBtn.style.background = '#10b981';
+                    nextBtn.style.color = 'white';
+                    nextBtn.style.cursor = 'pointer';
+
+                    const closeBtn = document.createElement('button');
+                    closeBtn.textContent = 'Close ✕';
+                    closeBtn.style.position = 'absolute';
+                    closeBtn.style.top = '14px';
+                    closeBtn.style.right = '14px';
+                    closeBtn.style.padding = '8px 10px';
+                    closeBtn.style.border = 'none';
+                    closeBtn.style.background = '#ef4444';
+                    closeBtn.style.color = 'white';
+                    closeBtn.style.borderRadius = '8px';
+                    closeBtn.style.cursor = 'pointer';
+
+                    controls.appendChild(prevBtn);
+                    controls.appendChild(nextBtn);
+                    book.appendChild(controls);
+                    book.appendChild(closeBtn);
+
+                    modal.appendChild(book);
+                    document.body.appendChild(modal);
+
+                    // Pagination state
+                    let pageIndex = 0; // left page index
+                    function updateView() {
+                        // Show pages pageIndex and pageIndex+1 centered
+                        const offset = -((pageWidth + 16) * pageIndex);
+                        strip.style.transform = `translateX(${offset}px)`;
+                    }
+
+                    prevBtn.onclick = () => {
+                        pageIndex = Math.max(0, pageIndex - 2);
+                        updateView();
+                    };
+                    nextBtn.onclick = () => {
+                        pageIndex = Math.min(Math.max(0, pageElements.length - 2), pageIndex + 2);
+                        updateView();
+                    };
+
+                    closeBtn.onclick = () => {
+                        modal.remove();
+                    };
+
+                    // Keyboard navigation
+                    function onKey(e) {
+                        if (e.key === 'ArrowLeft') prevBtn.click();
+                        if (e.key === 'ArrowRight') nextBtn.click();
+                        if (e.key === 'Escape') closeBtn.click();
+                    }
+                    window.addEventListener('keydown', onKey);
+
+                    // Clean up when modal removed
+                    const observer = new MutationObserver(() => {
+                        if (!document.body.contains(modal)) {
+                            window.removeEventListener('keydown', onKey);
+                            observer.disconnect();
+                        }
+                    });
+                    observer.observe(document.body, { childList: true });
+
+                    // Start at first page
+                    updateView();
+                }
+
+                // Helper to reconstruct an image prompt for a particular page index (best-effort)
+                function imagePromptForIndex(i) {
+                    try {
+                        const modalPages = document.querySelectorAll('#raBookStrip .raBookPage');
+                        if (modalPages && modalPages.length > i) {
+                            const textDiv = modalPages[i].querySelector('div');
+                            const paragraphText = textDiv ? textDiv.textContent || '' : '';
+                            const storyContext = { role: document.getElementById('raRole')?.value || 'Curious Explorer' };
+                            return `Beautiful cartoon illustration of ${storyContext.role} Maximus ${paragraphText.substring(0, 100)}..., cute expressive characters with big eyes, bright vibrant colors, whimsical magical elements, soft rounded shapes, Disney/Pixar style children's book illustration`;
+                        }
+                    } catch (e) { }
+                    return 'Cute cartoon illustration of Maximus in an adventure, bright colors, whimsical';
+                }
+
+                // Build pages array for the book modal
+                const pagesArray = paragraphs.map((p, i) => ({ title: '', text: p.trim() }));
+
+                // Open the book modal with pages and image results
+                try {
+                    openBookModal(pagesArray, imageResults);
+                } catch (e) {
+                    console.warn('Failed to open book modal', e);
+                    // Fallback: render inline as before
+                    pages.innerHTML = '';
+                    paragraphs.forEach((p, i) => {
+                        const pWrap = document.createElement('div');
+                        pWrap.style.padding = '15px';
+                        pWrap.style.borderRadius = '12px';
+                        pWrap.style.marginBottom = '15px';
+                        pWrap.style.background = '#f9fafb';
+                        pWrap.innerText = p;
+                        pages.appendChild(pWrap);
+                    });
+                }
             };
 
             // Build a friendly prompt for story generation
@@ -529,19 +838,25 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
             }
 
             // Generate image using Gemini's image generation
-            async function generateImageWithGemini(imagePrompt, referenceImage = null) {
+            async function generateImageWithGemini(imagePrompt, referenceImage = null, opts = {}) {
                 const apiKey = localStorage.getItem('gemini_api_key');
                 if (!apiKey) return { success: false, reason: 'no_key' };
 
                 try {
+                    const width = opts.width || 300;
+                    const height = opts.height || 300;
+                    const aspect = (width/height).toFixed(2);
+
                     const requestBody = {
                         prompt: {
                             text: imagePrompt
                         },
                         generationConfig: {
                             numberOfImages: 1,
-                            aspectRatio: "4:3",
-                            personGeneration: "allow_adult"
+                            aspectRatio: (Math.abs(width/height - 4/3) < 0.1) ? "4:3" : undefined,
+                            personGeneration: "allow_adult",
+                            // Best-effort: include explicit size where supported
+                            imageSize: { width, height }
                         }
                     };
 
@@ -587,13 +902,16 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
             }
 
             // Generate image using Pollinations.ai (free alternative to Gemini)
-            async function generateImageWithPollinations(imagePrompt, referenceImage = null) {
+            async function generateImageWithPollinations(imagePrompt, referenceImage = null, opts = {}) {
                 try {
                     // URL encode the prompt for the API
                     const encodedPrompt = encodeURIComponent(imagePrompt);
 
+                    const width = opts.width || 300;
+                    const height = opts.height || 300;
+
                     // Build the API URL with parameters for cartoon-style images
-                    let apiUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=300&height=300&model=flux&seed=${Math.floor(Math.random() * 1000000)}&enhance=true`;
+                    let apiUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&model=flux&seed=${Math.floor(Math.random() * 1000000)}&enhance=true`;
 
                     // Add reference image for image-to-image generation
                     if (referenceImage) {
@@ -636,8 +954,16 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
             async function regenerateImage(paragraphIndex) {
                 console.log('Regenerating image for paragraph', paragraphIndex);
 
-                // Find the image element and add loading state
-                const imageContainer = document.querySelector(`img[alt="Story illustration"]:nth-of-type(${paragraphIndex + 1})`);
+                // Try to find the image inside the book modal first
+                let imageContainer = null;
+                const modalImages = document.querySelectorAll('#raBookStrip img[alt="Story illustration"]');
+                if (modalImages && modalImages.length > paragraphIndex) {
+                    imageContainer = modalImages[paragraphIndex];
+                } else {
+                    // Fallback to inline page images
+                    imageContainer = document.querySelector(`img[alt="Story illustration"]:nth-of-type(${paragraphIndex + 1})`);
+                }
+
                 if (imageContainer) {
                     imageContainer.style.opacity = '0.5';
                     imageContainer.style.filter = 'blur(2px)';
@@ -652,8 +978,19 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
                     };
 
                     // Generate new image prompt for this paragraph
-                    const paragraphs = document.querySelectorAll('#raPages p');
-                    const paragraphText = paragraphs[paragraphIndex]?.textContent || '';
+                    // Try to extract paragraph text from book modal first
+                    let paragraphText = '';
+                    const modalPages = document.querySelectorAll('#raBookStrip .raBookPage');
+                    if (modalPages && modalPages.length > paragraphIndex) {
+                        const textDiv = modalPages[paragraphIndex].querySelector('div');
+                        paragraphText = textDiv ? textDiv.textContent || '' : '';
+                    }
+                    if (!paragraphText) {
+                        const paragraphs = document.querySelectorAll('#raPages p');
+                        paragraphText = paragraphs[paragraphIndex]?.textContent || '';
+                    }
+
+                    const imagePrompt = `Beautiful cartoon illustration of ${storyContext.role} Maximus ${paragraphText.substring(0, 100)}..., cute expressive characters with big eyes, bright vibrant colors, whimsical magical elements, soft rounded shapes, Disney/Pixar style children's book illustration`;
 
                     // Get reference image if uploaded
                     const referenceImageInput = document.getElementById('raReferenceImage');
@@ -705,16 +1042,36 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
                         imageContainer.style.opacity = '1';
                         imageContainer.style.filter = 'none';
 
-                        // Update the service badge
-                        const container = imageContainer.parentElement;
-                        const existingBadge = container.querySelector('div[style*="position:absolute"][style*="top:15px"][style*="left:15px"]');
-                        if (existingBadge) {
-                            const newBadge = newImageResult.service === 'pollinations'
-                                ? '<div style="position:absolute;top:15px;left:15px;background:#10b981;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🌸 Pollinations.ai</div>'
-                                : newImageResult.service === 'gemini'
-                                ? '<div style="position:absolute;top:15px;left:15px;background:#8b5cf6;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🤖 Gemini</div>'
-                                : '<div style="position:absolute;top:15px;left:15px;background:#f59e0b;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🎨 Fallback</div>';
-                            existingBadge.outerHTML = newBadge;
+                        // Update or create a service badge
+                        const container = imageContainer.parentElement || imageContainer.closest('.raBookPage') || imageContainer.parentNode;
+                        let badge = container.querySelector('.raServiceBadge');
+                        const badgeHtml = newImageResult.service === 'pollinations'
+                            ? { html: '🌸 Pollinations.ai', bg: '#10b981' }
+                            : newImageResult.service === 'gemini'
+                            ? { html: '🤖 Gemini', bg: '#8b5cf6' }
+                            : { html: '🔧 Fallback', bg: '#9ca3af' };
+
+                        if (badge) {
+                            badge.textContent = badgeHtml.html;
+                            badge.style.background = badgeHtml.bg;
+                        } else {
+                            badge = document.createElement('div');
+                            badge.className = 'raServiceBadge';
+                            badge.textContent = badgeHtml.html;
+                            badge.style.position = 'absolute';
+                            badge.style.top = '15px';
+                            badge.style.left = '15px';
+                            badge.style.background = badgeHtml.bg;
+                            badge.style.color = 'white';
+                            badge.style.padding = '4px 8px';
+                            badge.style.borderRadius = '6px';
+                            badge.style.fontSize = '11px';
+                            badge.style.fontWeight = 'bold';
+                            // Ensure container is positioned
+                            if (container && getComputedStyle(container).position === 'static') {
+                                container.style.position = 'relative';
+                            }
+                            container.appendChild(badge);
                         }
 
                         console.log('Successfully regenerated image for paragraph', paragraphIndex, 'using', newImageResult.service);
@@ -942,11 +1299,11 @@ Make it look like a beautiful page from a Disney or Pixar children's book. Retur
         overlay.style.justifyContent = 'center';
         overlay.style.cursor = 'pointer';
 
-        // Create the image with much larger size
-        const img = document.createElement('img');
-        img.src = imageSrc;
-        img.style.maxWidth = '95vw';
-        img.style.maxHeight = '95vh';
+    // Create the image with much larger size
+    const img = document.createElement('img');
+    img.src = imageSrc;
+    img.style.maxWidth = '95vw';
+    img.style.maxHeight = '95vh';
         img.style.width = 'auto';
         img.style.height = 'auto';
         img.style.objectFit = 'contain';
