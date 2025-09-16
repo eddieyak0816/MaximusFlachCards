@@ -417,6 +417,7 @@ Respond in one or two short sentences or ask a single follow-up question to cont
 
                 paragraphs.forEach((p, i) => {
                     const pWrap = document.createElement('div');
+                    pWrap.setAttribute('data-ra-paragraph', i);
                     pWrap.style.padding = '15px';
                     pWrap.style.borderRadius = '12px';
                     pWrap.style.marginBottom = '15px';
@@ -432,13 +433,13 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                             : '<div style="position:absolute;top:15px;left:15px;background:#f59e0b;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🎨 Fallback</div>'
                         : '';
 
-                    const imageHtml = imageResult && imageResult.success
-                        ? `<div style="position:relative;display:inline-block;">
-                            ${serviceBadge}
-                            <img src="${imageResult.imageData}" alt="Story illustration" onclick="openFullscreenImage('${imageResult.imageData}')" style="width:300px;height:300px;object-fit:cover;border-radius:12px;margin-bottom:10px;border:3px solid #d1d5db;cursor:pointer;transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'" />
-                            <div style="position:absolute;bottom:15px;right:15px;background:rgba(0,0,0,0.7);color:white;padding:4px 8px;border-radius:6px;font-size:12px;pointer-events:none;opacity:0.8;">🔍 Click to enlarge</div>
-                            <button onclick="regenerateImage(${i})" style="position:absolute;top:15px;right:15px;background:#3b82f6;color:white;padding:4px 8px;border-radius:6px;font-size:11px;border:none;cursor:pointer;opacity:0.8;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">🔄 Regenerate</button>
-                          </div>`
+                                        const imageHtml = imageResult && imageResult.success
+                                                ? `<div style="position:relative;display:inline-block;">
+                                                        ${serviceBadge}
+                                                        <img data-ra-paragraph-index="${i}" src="${imageResult.imageData}" alt="Story illustration" onclick="openFullscreenImage('${imageResult.imageData}')" style="width:300px;height:300px;object-fit:cover;border-radius:12px;margin-bottom:10px;border:3px solid #d1d5db;cursor:pointer;transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'" />
+                                                        <div style="position:absolute;bottom:15px;right:15px;background:rgba(0,0,0,0.7);color:white;padding:4px 8px;border-radius:6px;font-size:12px;pointer-events:none;opacity:0.8;">🔍 Click to enlarge</div>
+                                                        <button onclick="regenerateImage(${i})" style="position:absolute;top:15px;right:15px;background:#3b82f6;color:white;padding:4px 8px;border-radius:6px;font-size:11px;border:none;cursor:pointer;opacity:0.8;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">🔄 Regenerate</button>
+                                                    </div>`
                         : `<div style="width:300px;height:300px;background:#f3f4f6;border:3px solid #d1d5db;border-radius:12px;margin-bottom:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#9ca3af;font-size:14px;">
                             🎨 Image generation failed
                             <button onclick="regenerateImage(${i})" style="margin-top:10px;background:#3b82f6;color:white;padding:6px 12px;border-radius:6px;font-size:12px;border:none;cursor:pointer;">🔄 Try Again</button>
@@ -471,10 +472,14 @@ Respond in one or two short sentences or ask a single follow-up question to cont
 
                 // Book modal: creates a popup styled like an open book with page-turning
                 function openBookModal(pagesContent, imageResults = []) {
-                    // If modal exists, reuse
+                    // If modal exists and is hidden, show it; if visible, bring to front and return
                     let modal = document.getElementById('raBookModal');
                     if (modal) {
-                        modal.parentNode.removeChild(modal);
+                        if (modal.style.display === 'none') {
+                            modal.style.display = 'flex';
+                        }
+                        modal.scrollTop = 0;
+                        return;
                     }
 
                     modal = document.createElement('div');
@@ -514,12 +519,12 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     pagesContainer.style.padding = '24px';
                     pagesContainer.style.boxSizing = 'border-box';
 
-                    // Page width and height - larger so two pages fill the modal nicely
+                    // Page width and height - make single page view so image can be larger
                     const modalInnerWidth = Math.min(1000, window.innerWidth * 0.94 - 48);
-                    const pageWidth = Math.floor((modalInnerWidth - 48) / 2);
-                    const pageHeight = Math.floor(Math.min(720, window.innerHeight * 0.86 - 48));
+                    const pageWidth = Math.floor(modalInnerWidth - 48); // single page uses most width
+                    const pageHeight = Math.floor(Math.min(820, window.innerHeight * 0.86 - 48));
 
-                    // Build page elements (two pages visible at a time: left and right)
+                    // Build page elements (single page visible at a time)
                     const pageElements = [];
                     for (let i = 0; i < pagesContent.length; i++) {
                         const p = document.createElement('div');
@@ -544,6 +549,8 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                         if (imageResults[i] && imageResults[i].imageData) {
                             const img = document.createElement('img');
                             img.src = imageResults[i].imageData;
+                            // mark which paragraph this image belongs to so regenerate can target it
+                            img.setAttribute('data-ra-paragraph-index', i);
                             img.style.maxWidth = '100%';
                             img.style.maxHeight = (pageHeight * 0.55) + 'px';
                             img.style.borderRadius = '8px';
@@ -599,10 +606,11 @@ Respond in one or two short sentences or ask a single follow-up question to cont
 
                         textWrap.innerHTML = `<h3 style="margin:0 0 8px 0;font-size:1.1rem;">${pagesContent[i].title || ''}</h3><div style="white-space:pre-wrap">${pagesContent[i].text}</div>`;
 
-                        // Add TTS read button under the text
+                        // Add TTS read and stop buttons under the text
                         const ttsBtn = document.createElement('button');
                         ttsBtn.textContent = '🔈 Read';
                         ttsBtn.style.marginTop = '10px';
+                        ttsBtn.style.marginRight = '8px';
                         ttsBtn.style.background = '#f59e0b';
                         ttsBtn.style.color = 'white';
                         ttsBtn.style.border = 'none';
@@ -611,14 +619,31 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                         ttsBtn.style.cursor = 'pointer';
                         ttsBtn.onclick = () => {
                             try {
+                                // Stop any previous speech and start this one
+                                window.speechSynthesis.cancel();
                                 const utter = new SpeechSynthesisUtterance(pagesContent[i].text);
                                 utter.rate = 0.95;
                                 utter.pitch = 1;
-                                window.speechSynthesis.cancel();
+                                utter.onend = () => { /* no-op for now */ };
                                 window.speechSynthesis.speak(utter);
                             } catch (e) { console.warn('TTS failed', e); }
                         };
+
+                        const ttsStopBtn = document.createElement('button');
+                        ttsStopBtn.textContent = '■ Stop';
+                        ttsStopBtn.style.marginTop = '10px';
+                        ttsStopBtn.style.background = '#ef4444';
+                        ttsStopBtn.style.color = 'white';
+                        ttsStopBtn.style.border = 'none';
+                        ttsStopBtn.style.padding = '8px 10px';
+                        ttsStopBtn.style.borderRadius = '8px';
+                        ttsStopBtn.style.cursor = 'pointer';
+                        ttsStopBtn.onclick = () => {
+                            try { window.speechSynthesis.cancel(); } catch (e) { console.warn('TTS stop failed', e); }
+                        };
+
                         textWrap.appendChild(ttsBtn);
+                        textWrap.appendChild(ttsStopBtn);
 
                         p.appendChild(imgWrap);
                         p.appendChild(textWrap);
@@ -708,16 +733,17 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     }
 
                     prevBtn.onclick = () => {
-                        pageIndex = Math.max(0, pageIndex - 2);
+                        pageIndex = Math.max(0, pageIndex - 1);
                         updateView();
                     };
                     nextBtn.onclick = () => {
-                        pageIndex = Math.min(Math.max(0, pageElements.length - 2), pageIndex + 2);
+                        pageIndex = Math.min(pageElements.length - 1, pageIndex + 1);
                         updateView();
                     };
 
                     closeBtn.onclick = () => {
-                        modal.remove();
+                        // hide modal so it can be reopened without regenerating
+                        modal.style.display = 'none';
                     };
 
                     // Keyboard navigation
@@ -758,8 +784,31 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                 // Build pages array for the book modal
                 const pagesArray = paragraphs.map((p, i) => ({ title: '', text: p.trim() }));
 
-                // Open the book modal with pages and image results
+                // Persist last generated book so it can be reopened
+                window._raLastBook = { pages: pagesArray, images: imageResults };
+
+                // Add a small 'Open Book' button so user can reopen without regenerating
                 try {
+                    let openBtn = document.getElementById('raOpenBookBtn');
+                    if (!openBtn) {
+                        openBtn = document.createElement('button');
+                        openBtn.id = 'raOpenBookBtn';
+                        openBtn.textContent = '📖 Open Book';
+                        openBtn.style.marginBottom = '12px';
+                        openBtn.style.background = '#6b21a8';
+                        openBtn.style.color = 'white';
+                        openBtn.style.border = 'none';
+                        openBtn.style.padding = '8px 12px';
+                        openBtn.style.borderRadius = '8px';
+                        openBtn.style.cursor = 'pointer';
+                        openBtn.onclick = () => {
+                            if (window._raLastBook) openBookModal(window._raLastBook.pages, window._raLastBook.images);
+                        };
+                        const outDiv = document.getElementById('raOutput');
+                        outDiv.insertBefore(openBtn, outDiv.firstChild);
+                    }
+
+                    // Open the book modal with pages and image results
                     openBookModal(pagesArray, imageResults);
                 } catch (e) {
                     console.warn('Failed to open book modal', e);
@@ -954,43 +1003,46 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
             async function regenerateImage(paragraphIndex) {
                 console.log('Regenerating image for paragraph', paragraphIndex);
 
-                // Try to find the image inside the book modal first
-                let imageContainer = null;
-                const modalImages = document.querySelectorAll('#raBookStrip img[alt="Story illustration"]');
-                if (modalImages && modalImages.length > paragraphIndex) {
-                    imageContainer = modalImages[paragraphIndex];
-                } else {
-                    // Fallback to inline page images
-                    imageContainer = document.querySelector(`img[alt="Story illustration"]:nth-of-type(${paragraphIndex + 1})`);
+                // Prefer finding any image element tagged with the paragraph index
+                let imageElement = document.querySelector(`img[data-ra-paragraph-index='${paragraphIndex}']`);
+                if (!imageElement) {
+                    // Fallback to image inside raPages area
+                    imageElement = document.querySelector(`#raPages img[data-ra-paragraph-index='${paragraphIndex}']`);
+                }
+                if (!imageElement) {
+                    // Last resort: first matching alt-nth fallback
+                    imageElement = document.querySelector(`img[alt="Story illustration"]:nth-of-type(${paragraphIndex + 1})`);
                 }
 
-                if (imageContainer) {
-                    imageContainer.style.opacity = '0.5';
-                    imageContainer.style.filter = 'blur(2px)';
+                if (imageElement) {
+                    imageElement.style.opacity = '0.5';
+                    imageElement.style.filter = 'blur(2px)';
                 }
 
                 try {
-                    // Get the current story context and image prompts
                     const storyContext = {
                         role: document.getElementById('raRole')?.value || 'Curious Explorer',
                         setting: document.getElementById('raSetting')?.value || 'magical forest',
                         mood: document.getElementById('raMood')?.value || 'whimsical'
                     };
 
-                    // Generate new image prompt for this paragraph
-                    // Try to extract paragraph text from book modal first
+                    // Try to find the paragraph text by matching elements with data attributes
                     let paragraphText = '';
-                    const modalPages = document.querySelectorAll('#raBookStrip .raBookPage');
-                    if (modalPages && modalPages.length > paragraphIndex) {
-                        const textDiv = modalPages[paragraphIndex].querySelector('div');
-                        paragraphText = textDiv ? textDiv.textContent || '' : '';
+                    const pageEl = document.querySelector(`[data-ra-paragraph='${paragraphIndex}']`);
+                    if (pageEl) paragraphText = pageEl.textContent || '';
+                    if (!paragraphText) {
+                        const modalPages = document.querySelectorAll('#raBookStrip .raBookPage');
+                        if (modalPages && modalPages.length > paragraphIndex) {
+                            const textDiv = modalPages[paragraphIndex].querySelector('div');
+                            paragraphText = textDiv ? textDiv.textContent || '' : '';
+                        }
                     }
                     if (!paragraphText) {
                         const paragraphs = document.querySelectorAll('#raPages p');
                         paragraphText = paragraphs[paragraphIndex]?.textContent || '';
                     }
 
-                    const imagePrompt = `Beautiful cartoon illustration of ${storyContext.role} Maximus ${paragraphText.substring(0, 100)}..., cute expressive characters with big eyes, bright vibrant colors, whimsical magical elements, soft rounded shapes, Disney/Pixar style children's book illustration`;
+                    const imagePrompt = `Beautiful cartoon illustration of ${storyContext.role} Maximus ${paragraphText.substring(0, 200)}..., cute expressive characters with big eyes, bright vibrant colors, whimsical magical elements, soft rounded shapes, Disney/Pixar style children's book illustration`;
 
                     // Get reference image if uploaded
                     const referenceImageInput = document.getElementById('raReferenceImage');
@@ -1001,77 +1053,72 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
                             reader.readAsDataURL(referenceImageInput.files[0]);
                         }) : null;
 
-                    // Generate new image using preferred AI
                     const preferredImageAI = localStorage.getItem('preferredImageAI') || 'auto';
                     let newImageResult = null;
 
+                    // Try services (favor pollinations as before)
                     if (preferredImageAI === 'pollinations' || preferredImageAI === 'auto') {
                         const pollinationsResult = await generateImageWithPollinations(imagePrompt, referenceImage);
                         if (pollinationsResult.success) {
-                            newImageResult = {
-                                success: true,
-                                imageData: pollinationsResult.imageData,
-                                service: 'pollinations'
-                            };
+                            newImageResult = { success: true, imageData: pollinationsResult.imageData, service: 'pollinations' };
                         }
                     }
 
                     if (!newImageResult && (preferredImageAI === 'gemini' || preferredImageAI === 'auto')) {
                         const geminiResult = await generateImageWithGemini(imagePrompt, referenceImage);
                         if (geminiResult.success) {
-                            newImageResult = {
-                                success: true,
-                                imageData: geminiResult.imageData,
-                                service: 'gemini'
-                            };
+                            newImageResult = { success: true, imageData: geminiResult.imageData, service: 'gemini' };
                         }
                     }
 
                     if (!newImageResult) {
-                        // Use fallback
-                        newImageResult = {
-                            success: true,
-                            imageData: generateFallbackImage(storyContext, paragraphIndex),
-                            service: 'fallback'
-                        };
+                        newImageResult = { success: true, imageData: generateFallbackImage(storyContext, paragraphIndex), service: 'fallback' };
                     }
 
-                    // Update the image in the DOM
-                    if (newImageResult.success && imageContainer) {
-                        imageContainer.src = newImageResult.imageData;
-                        imageContainer.style.opacity = '1';
-                        imageContainer.style.filter = 'none';
+                    // Update DOM for found image element and any inline mirrors
+                    if (newImageResult.success) {
+                        if (imageElement) {
+                            imageElement.src = newImageResult.imageData;
+                            imageElement.style.opacity = '1';
+                            imageElement.style.filter = 'none';
+                            imageElement.setAttribute('data-ra-paragraph-index', paragraphIndex);
+                        }
 
-                        // Update or create a service badge
-                        const container = imageContainer.parentElement || imageContainer.closest('.raBookPage') || imageContainer.parentNode;
-                        let badge = container.querySelector('.raServiceBadge');
-                        const badgeHtml = newImageResult.service === 'pollinations'
-                            ? { html: '🌸 Pollinations.ai', bg: '#10b981' }
-                            : newImageResult.service === 'gemini'
-                            ? { html: '🤖 Gemini', bg: '#8b5cf6' }
-                            : { html: '🔧 Fallback', bg: '#9ca3af' };
-
-                        if (badge) {
-                            badge.textContent = badgeHtml.html;
-                            badge.style.background = badgeHtml.bg;
-                        } else {
-                            badge = document.createElement('div');
-                            badge.className = 'raServiceBadge';
-                            badge.textContent = badgeHtml.html;
-                            badge.style.position = 'absolute';
-                            badge.style.top = '15px';
-                            badge.style.left = '15px';
-                            badge.style.background = badgeHtml.bg;
-                            badge.style.color = 'white';
-                            badge.style.padding = '4px 8px';
-                            badge.style.borderRadius = '6px';
-                            badge.style.fontSize = '11px';
-                            badge.style.fontWeight = 'bold';
-                            // Ensure container is positioned
-                            if (container && getComputedStyle(container).position === 'static') {
-                                container.style.position = 'relative';
+                        // Update or create badge near the image
+                        const container = (imageElement && (imageElement.parentElement || imageElement.closest('.raBookPage'))) || null;
+                        if (container) {
+                            let badge = container.querySelector('.raServiceBadge');
+                            const badgeHtml = newImageResult.service === 'pollinations'
+                                ? { html: '🌸 Pollinations.ai', bg: '#10b981' }
+                                : newImageResult.service === 'gemini'
+                                ? { html: '🤖 Gemini', bg: '#8b5cf6' }
+                                : { html: '🔧 Fallback', bg: '#9ca3af' };
+                            if (badge) {
+                                badge.textContent = badgeHtml.html;
+                                badge.style.background = badgeHtml.bg;
+                            } else {
+                                badge = document.createElement('div');
+                                badge.className = 'raServiceBadge';
+                                badge.textContent = badgeHtml.html;
+                                badge.style.position = 'absolute';
+                                badge.style.top = '15px';
+                                badge.style.left = '15px';
+                                badge.style.background = badgeHtml.bg;
+                                badge.style.color = 'white';
+                                badge.style.padding = '4px 8px';
+                                badge.style.borderRadius = '6px';
+                                badge.style.fontSize = '11px';
+                                badge.style.fontWeight = 'bold';
+                                if (container && getComputedStyle(container).position === 'static') container.style.position = 'relative';
+                                container.appendChild(badge);
                             }
-                            container.appendChild(badge);
+                        }
+
+                        // Update the inline image mirror if present
+                        const inlineImg = document.querySelector(`#raPages img[data-ra-paragraph-index='${paragraphIndex}']`);
+                        if (inlineImg && inlineImg !== imageElement) {
+                            inlineImg.src = newImageResult.imageData;
+                            inlineImg.setAttribute('data-ra-paragraph-index', paragraphIndex);
                         }
 
                         console.log('Successfully regenerated image for paragraph', paragraphIndex, 'using', newImageResult.service);
@@ -1079,9 +1126,9 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
 
                 } catch (error) {
                     console.error('Failed to regenerate image:', error);
-                    if (imageContainer) {
-                        imageContainer.style.opacity = '1';
-                        imageContainer.style.filter = 'none';
+                    if (imageElement) {
+                        imageElement.style.opacity = '1';
+                        imageElement.style.filter = 'none';
                     }
                 }
             }

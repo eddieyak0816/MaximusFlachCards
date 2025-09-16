@@ -187,14 +187,7 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                         <div class="api-provider">
                             <label class="block text-xs font-medium text-gray-700 mb-1">Google Gemini API Key ⭐</label>
-                            <div id="gemini-keys-container">
-                                <div class="key-input-group mb-2">
-                                    <input type="password" id="geminiKey-0" placeholder="AIzaSy..." 
-                                           class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
-                                           onchange="saveApiKeys('gemini')">
-                                    <button onclick="removeApiKey('gemini', 0)" class="ml-2 text-red-500 hover:text-red-700 text-sm" style="display: none;">✕</button>
-                                </div>
-                            </div>
+                            <div id="gemini-keys-container"></div>
                             <button onclick="addApiKey('gemini')" class="text-xs text-blue-600 hover:text-blue-800 mb-2">+ Add More</button>
                             <div class="flex items-center mt-2">
                                 <input type="checkbox" id="gemini-enabled" class="mr-2" onchange="saveApiSettings()">
@@ -204,14 +197,7 @@
                         </div>
                         <div class="api-provider">
                             <label class="block text-xs font-medium text-gray-700 mb-1">OpenAI API Key</label>
-                            <div id="openai-keys-container">
-                                <div class="key-input-group mb-2">
-                                    <input type="password" id="openaiKey-0" placeholder="sk-..." 
-                                           class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
-                                           onchange="saveApiKeys('openai')">
-                                    <button onclick="removeApiKey('openai', 0)" class="ml-2 text-red-500 hover:text-red-700 text-sm" style="display: none;">✕</button>
-                                </div>
-                            </div>
+                            <div id="openai-keys-container"></div>
                             <button onclick="addApiKey('openai')" class="text-xs text-blue-600 hover:text-blue-800 mb-2">+ Add More</button>
                             <div class="flex items-center mt-2">
                                 <input type="checkbox" id="openai-enabled" class="mr-2" onchange="saveApiSettings()">
@@ -221,14 +207,7 @@
                         </div>
                         <div class="api-provider">
                             <label class="block text-xs font-medium text-gray-700 mb-1">Anthropic API Key</label>
-                            <div id="anthropic-keys-container">
-                                <div class="key-input-group mb-2">
-                                    <input type="password" id="anthropicKey-0" placeholder="sk-ant-..." 
-                                           class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
-                                           onchange="saveApiKeys('anthropic')">
-                                    <button onclick="removeApiKey('anthropic', 0)" class="ml-2 text-red-500 hover:text-red-700 text-sm" style="display: none;">✕</button>
-                                </div>
-                            </div>
+                            <div id="anthropic-keys-container"></div>
                             <button onclick="addApiKey('anthropic')" class="text-xs text-blue-600 hover:text-blue-800 mb-2">+ Add More</button>
                             <div class="flex items-center mt-2">
                                 <input type="checkbox" id="anthropic-enabled" class="mr-2" onchange="saveApiSettings()">
@@ -238,14 +217,7 @@
                         </div>
                         <div class="api-provider">
                             <label class="block text-xs font-medium text-gray-700 mb-1">Groq API Key</label>
-                            <div id="groq-keys-container">
-                                <div class="key-input-group mb-2">
-                                    <input type="password" id="groqKey-0" placeholder="gsk_..." 
-                                           class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
-                                           onchange="saveApiKeys('groq')">
-                                    <button onclick="removeApiKey('groq', 0)" class="ml-2 text-red-500 hover:text-red-700 text-sm" style="display: none;">✕</button>
-                                </div>
-                            </div>
+                            <div id="groq-keys-container"></div>
                             <button onclick="addApiKey('groq')" class="text-xs text-blue-600 hover:text-blue-800 mb-2">+ Add More</button>
                             <div class="flex items-center mt-2">
                                 <input type="checkbox" id="groq-enabled" class="mr-2" onchange="saveApiSettings()">
@@ -256,14 +228,7 @@
 
                         <div class="mb-4">
                             <label class="block text-xs font-medium text-gray-700 mb-1">OpenRouter API Key</label>
-                            <div id="openrouter-keys-container">
-                                <div class="key-input-group mb-2">
-                                    <input type="password" id="openrouterKey-0" placeholder="sk-or-v1-..." 
-                                           class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
-                                           onchange="saveApiKeys('openrouter')">
-                                    <button onclick="removeApiKey('openrouter', 0)" class="ml-2 text-red-500 hover:text-red-700 text-sm" style="display: none;">✕</button>
-                                </div>
-                            </div>
+                            <div id="openrouter-keys-container"></div>
                             <button onclick="addApiKey('openrouter')" class="text-xs text-blue-600 hover:text-blue-800 mb-2">+ Add More</button>
                             <div class="flex items-center mt-2">
                                 <input type="checkbox" id="openrouter-enabled" class="mr-2" onchange="saveApiSettings()">
@@ -8216,27 +8181,25 @@ window.sortAllCardsTable = function(col) {
         }
 
         // Add a new API key input field for a provider
-        function addApiKey(provider) {
+        function addApiKey(provider, value = '') {
             const container = document.getElementById(`${provider}-keys-container`);
             const existingInputs = container.querySelectorAll('input[type="password"]');
             const newIndex = existingInputs.length;
-            
+
             const keyGroup = document.createElement('div');
             keyGroup.className = 'key-input-group mb-2';
             keyGroup.innerHTML = `
                 <input type="password" id="${provider}Key-${newIndex}" placeholder="${getPlaceholder(provider)}" 
                        class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
-                       onchange="saveApiKeys('${provider}')">
+                       onchange="saveApiKeys('${provider}')" value="${value}">
                 <button onclick="removeApiKey('${provider}', ${newIndex})" class="ml-2 text-red-500 hover:text-red-700 text-sm">✕</button>
             `;
-            
+
             container.appendChild(keyGroup);
-            
-            // Show remove button for first input if we now have multiple
-            if (newIndex === 1) {
-                const firstRemoveBtn = container.querySelector('button[onclick*="removeApiKey"]');
-                if (firstRemoveBtn) firstRemoveBtn.style.display = 'inline';
-            }
+
+            // Update remove button visibility: show only if more than one input exists
+            const removeBtns = container.querySelectorAll('button[onclick*="removeApiKey"]');
+            removeBtns.forEach(btn => btn.style.display = removeBtns.length > 1 ? 'inline' : 'none');
         }
 
         // Remove an API key input field
@@ -8302,27 +8265,22 @@ window.sortAllCardsTable = function(col) {
         // Load API keys for a provider (handles multiple keys)
         function loadApiKeys(provider) {
             const container = document.getElementById(`${provider}-keys-container`);
+            // Clear any existing DOM nodes
+            container.innerHTML = '';
+
             const savedKeys = localStorage.getItem(`${provider}_api_keys`);
-            
             if (savedKeys) {
                 try {
-                    const keys = JSON.parse(savedKeys);
-                    keys.forEach((key, index) => {
-                        if (index === 0) {
-                            // First key goes in existing input
-                            const firstInput = container.querySelector('input[type="password"]');
-                            if (firstInput) firstInput.value = key;
-                        } else {
-                            // Additional keys need new inputs
-                            addApiKey(provider);
-                            const newInput = document.getElementById(`${provider}Key-${index}`);
-                            if (newInput) newInput.value = key;
-                        }
+                    const keys = JSON.parse(savedKeys) || [];
+                    // Create an input for each saved key
+                    keys.forEach((key) => {
+                        addApiKey(provider, key);
                     });
                 } catch (error) {
                     console.error(`Error loading ${provider} keys:`, error);
                 }
             }
+            // If no saved keys, leave the container empty (no empty input shown)
         }
 
         // Get all API keys for a provider
