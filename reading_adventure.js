@@ -98,7 +98,13 @@
                         </div>
                     </div>
 
-                        <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px;">
+                        <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px;align-items:center;">
+                            <label for="raImageProviderSelect" style="font-size:12px;color:#374151;margin-right:6px;">Image Provider:</label>
+                            <select id="raImageProviderSelect" style="padding:8px;border:1px solid #ddd;border-radius:6px;">
+                                <option value="auto">Auto (recommended)</option>
+                                <option value="pollinations">Pollinations.ai</option>
+                                <option value="gemini">Gemini</option>
+                            </select>
                             <button id="raGenerate" style="background:#2563eb;color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer;">Write My Story</button>
                         </div>
 
@@ -124,6 +130,56 @@
             }
 
             document.getElementById('raSuggest').onclick = () => suggestForField('title');
+
+            // Populate image provider select dynamically based on enabled providers and last-used service
+            setTimeout(() => {
+                const sel = document.getElementById('raImageProviderSelect');
+                if (!sel) return;
+
+                // Clear existing options and always include Auto
+                sel.innerHTML = '';
+                const autoOpt = document.createElement('option'); autoOpt.value = 'auto'; autoOpt.text = 'Auto (recommended)'; sel.appendChild(autoOpt);
+
+                // Helper to add option if not present
+                function addProviderOption(value, label) {
+                    if (!Array.from(sel.options).some(o => o.value === value)) {
+                        const opt = document.createElement('option'); opt.value = value; opt.text = label; sel.appendChild(opt);
+                    }
+                }
+
+                // Add Pollinations (no key required)
+                addProviderOption('pollinations', 'Pollinations.ai');
+
+                // Add Gemini if enabled or has keys
+                try {
+                    const gemEnabled = localStorage.getItem('gemini_enabled') === 'true';
+                    const gemKeys = getApiKeys && typeof getApiKeys === 'function' ? getApiKeys('gemini') : [];
+                    if (gemEnabled || (gemKeys && gemKeys.length > 0)) addProviderOption('gemini', 'Gemini');
+                } catch (e) { /* ignore */ }
+
+                // If last book used a different service, ensure it's present
+                if (window._raLastBook && window._raLastBook.images && window._raLastBook.images.length) {
+                    const svc = window._raLastBook.images[0] && window._raLastBook.images[0].service;
+                    if (svc) addProviderOption(svc, svc.charAt(0).toUpperCase() + svc.slice(1));
+                }
+
+                // If user saved a preference, prefer it
+                const saved = localStorage.getItem('preferredImageAI');
+                if (saved && Array.from(sel.options).some(o => o.value === saved)) sel.value = saved;
+                else if (window._raLastBook && window._raLastBook.images && window._raLastBook.images.length) {
+                    const svc = window._raLastBook.images[0] && window._raLastBook.images[0].service;
+                    if (svc && Array.from(sel.options).some(o => o.value === svc)) sel.value = svc;
+                }
+            }, 50);
+
+            // Persist changes to the image provider selection
+            setTimeout(() => {
+                const sel = document.getElementById('raImageProviderSelect');
+                if (!sel) return;
+                sel.onchange = () => {
+                    try { localStorage.setItem('preferredImageAI', sel.value); } catch (e) { /* ignore */ }
+                };
+            }, 100);
 
             // per-field AI Suggest handlers
             const suggestSamples = {
@@ -540,53 +596,118 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                         p.style.overflow = 'hidden';
                         p.style.display = 'flex';
                         p.style.flexDirection = 'column';
-                        p.style.justifyContent = 'space-between';
 
-                        // Add image (if available)
+                        // Text at the top
+                        const textWrap = document.createElement('div');
+                        textWrap.style.flex = '0 0 auto';
+                        textWrap.style.marginBottom = '12px';
+                        textWrap.style.overflowY = 'auto';
+                        textWrap.style.fontSize = '16px';
+                        textWrap.style.color = '#111827';
+                        textWrap.innerHTML = `<h3 style="margin:0 0 8px 0;font-size:1.1rem;">${pagesContent[i].title || ''}</h3><div style="white-space:pre-wrap">${pagesContent[i].text}</div>`;
+
+                        // Add TTS read and stop buttons inline with the text
+                        const ttsWrap = document.createElement('div');
+                        ttsWrap.style.marginTop = '10px';
+                        const ttsBtn = document.createElement('button');
+                        ttsBtn.textContent = '🔈 Read';
+                        ttsBtn.style.marginRight = '8px';
+                        ttsBtn.style.background = '#f59e0b';
+                        ttsBtn.style.color = 'white';
+                        ttsBtn.style.border = 'none';
+                        ttsBtn.style.padding = '8px 10px';
+                        ttsBtn.style.borderRadius = '8px';
+                        ttsBtn.style.cursor = 'pointer';
+                        ttsBtn.onclick = () => {
+                            try {
+                                window.speechSynthesis.cancel();
+                                const utter = new SpeechSynthesisUtterance(pagesContent[i].text);
+                                utter.rate = 0.95;
+                                utter.pitch = 1;
+                                window.speechSynthesis.speak(utter);
+                            } catch (e) { console.warn('TTS failed', e); }
+                        };
+
+                        const ttsStopBtn = document.createElement('button');
+                        ttsStopBtn.textContent = '■ Stop';
+                        ttsStopBtn.style.background = '#ef4444';
+                        ttsStopBtn.style.color = 'white';
+                        ttsStopBtn.style.border = 'none';
+                        ttsStopBtn.style.padding = '8px 10px';
+                        ttsStopBtn.style.borderRadius = '8px';
+                        ttsStopBtn.style.cursor = 'pointer';
+                        ttsStopBtn.onclick = () => { try { window.speechSynthesis.cancel(); } catch (e) { console.warn('TTS stop failed', e); } };
+
+                        ttsWrap.appendChild(ttsBtn);
+                        ttsWrap.appendChild(ttsStopBtn);
+                        textWrap.appendChild(ttsWrap);
+
+                        // Image area below the text, larger and centered
                         const imgWrap = document.createElement('div');
-                        imgWrap.style.flex = '0 0 auto';
+                        imgWrap.style.flex = '1 1 auto';
+                        imgWrap.style.display = 'flex';
+                        imgWrap.style.alignItems = 'center';
+                        imgWrap.style.justifyContent = 'center';
                         imgWrap.style.textAlign = 'center';
+
                         if (imageResults[i] && imageResults[i].imageData) {
                             const img = document.createElement('img');
                             img.src = imageResults[i].imageData;
-                            // mark which paragraph this image belongs to so regenerate can target it
                             img.setAttribute('data-ra-paragraph-index', i);
                             img.style.maxWidth = '100%';
-                            img.style.maxHeight = (pageHeight * 0.55) + 'px';
+                            img.style.maxHeight = (pageHeight * 0.68) + 'px';
                             img.style.borderRadius = '8px';
                             img.style.objectFit = 'cover';
                             img.alt = 'Story illustration';
                             img.style.cursor = 'pointer';
 
-                            // Click to open large image (1024x768)
                             img.addEventListener('click', async () => {
-                                // If the existing image was generated by a service, try to request a larger version
                                 try {
-                                    // Prefer Gemini then Pollinations
-                                    const preferred = localStorage.getItem('preferredImageAI') || 'auto';
+                                    const sel = document.getElementById('raImageProviderSelect');
+                                    const preferred = sel ? (sel.value || (localStorage.getItem('preferredImageAI') || 'auto')) : (localStorage.getItem('preferredImageAI') || 'auto');
+
+                                    // Build a try-order array based on preference but always allow the alternative as a fallback
+                                    let order = [];
+                                    if (preferred === 'pollinations') order = ['pollinations', 'gemini'];
+                                    else if (preferred === 'gemini') order = ['gemini', 'pollinations'];
+                                    else order = ['pollinations', 'gemini']; // auto prefers pollinations first
+
                                     let largeResult = null;
-                                    if (preferred === 'gemini' || preferred === 'auto') {
-                                        largeResult = await generateImageWithGemini(imagePromptForIndex(i) , null, { width: 1024, height: 768 });
+                                    for (const svc of order) {
+                                        if (svc === 'gemini') {
+                                            try {
+                                                const res = await generateImageWithGemini(imagePromptForIndex(i), null, { width: 1024, height: 768 });
+                                                if (res && res.success) {
+                                                    largeResult = res;
+                                                    largeResult.service = 'gemini';
+                                                    break;
+                                                }
+                                            } catch (e) { console.warn('Gemini large image attempt failed', e); }
+                                        } else if (svc === 'pollinations') {
+                                            try {
+                                                const res = await generateImageWithPollinations(imagePromptForIndex(i), null, { width: 1024, height: 768 });
+                                                if (res && res.success) {
+                                                    largeResult = res;
+                                                    largeResult.service = 'pollinations';
+                                                    break;
+                                                }
+                                            } catch (e) { console.warn('Pollinations large image attempt failed', e); }
+                                        }
                                     }
-                                    if ((!largeResult || !largeResult.success) && (preferred === 'pollinations' || preferred === 'auto')) {
-                                        largeResult = await generateImageWithPollinations(imagePromptForIndex(i), null, { width: 1024, height: 768 });
-                                    }
+
                                     if (!largeResult || !largeResult.success) {
-                                        largeResult = { success: true, imageData: generateFallbackImage({ role: document.getElementById('raRole')?.value || 'Curious Explorer' }, i) };
+                                        largeResult = { success: true, imageData: generateFallbackImage({ role: document.getElementById('raRole')?.value || 'Curious Explorer' }, i), service: 'fallback' };
                                     }
-                                    if (largeResult && largeResult.success) {
-                                        // Open fullscreen with size 1024x768 enforced by the container
-                                        openFullscreenImage(largeResult.imageData, 1024, 768);
-                                    }
+
+                                    if (largeResult && largeResult.success) openFullscreenImage(largeResult.imageData, 1024, 768);
                                 } catch (e) { console.warn('Large image load failed', e); }
                             });
 
                             imgWrap.appendChild(img);
 
-                            // regeneration button
                             const regen = document.createElement('button');
                             regen.textContent = '🔄 Regenerate';
-                            regen.style.marginTop = '8px';
+                            regen.style.marginLeft = '8px';
                             regen.style.background = '#3b82f6';
                             regen.style.color = 'white';
                             regen.style.border = 'none';
@@ -597,60 +718,12 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                             imgWrap.appendChild(regen);
                         }
 
-                        const textWrap = document.createElement('div');
-                        textWrap.style.flex = '1 1 auto';
-                        textWrap.style.marginTop = '8px';
-                        textWrap.style.overflowY = 'auto';
-                        textWrap.style.fontSize = '16px';
-                        textWrap.style.color = '#111827';
-
-                        textWrap.innerHTML = `<h3 style="margin:0 0 8px 0;font-size:1.1rem;">${pagesContent[i].title || ''}</h3><div style="white-space:pre-wrap">${pagesContent[i].text}</div>`;
-
-                        // Add TTS read and stop buttons under the text
-                        const ttsBtn = document.createElement('button');
-                        ttsBtn.textContent = '🔈 Read';
-                        ttsBtn.style.marginTop = '10px';
-                        ttsBtn.style.marginRight = '8px';
-                        ttsBtn.style.background = '#f59e0b';
-                        ttsBtn.style.color = 'white';
-                        ttsBtn.style.border = 'none';
-                        ttsBtn.style.padding = '8px 10px';
-                        ttsBtn.style.borderRadius = '8px';
-                        ttsBtn.style.cursor = 'pointer';
-                        ttsBtn.onclick = () => {
-                            try {
-                                // Stop any previous speech and start this one
-                                window.speechSynthesis.cancel();
-                                const utter = new SpeechSynthesisUtterance(pagesContent[i].text);
-                                utter.rate = 0.95;
-                                utter.pitch = 1;
-                                utter.onend = () => { /* no-op for now */ };
-                                window.speechSynthesis.speak(utter);
-                            } catch (e) { console.warn('TTS failed', e); }
-                        };
-
-                        const ttsStopBtn = document.createElement('button');
-                        ttsStopBtn.textContent = '■ Stop';
-                        ttsStopBtn.style.marginTop = '10px';
-                        ttsStopBtn.style.background = '#ef4444';
-                        ttsStopBtn.style.color = 'white';
-                        ttsStopBtn.style.border = 'none';
-                        ttsStopBtn.style.padding = '8px 10px';
-                        ttsStopBtn.style.borderRadius = '8px';
-                        ttsStopBtn.style.cursor = 'pointer';
-                        ttsStopBtn.onclick = () => {
-                            try { window.speechSynthesis.cancel(); } catch (e) { console.warn('TTS stop failed', e); }
-                        };
-
-                        textWrap.appendChild(ttsBtn);
-                        textWrap.appendChild(ttsStopBtn);
-
-                        p.appendChild(imgWrap);
                         p.appendChild(textWrap);
+                        p.appendChild(imgWrap);
                         pageElements.push(p);
                     }
 
-                    // Create view that shows two pages side-by-side
+                    // Create view that shows a single centered page at a time
                     const view = document.createElement('div');
                     view.id = 'raBookView';
                     view.style.display = 'flex';
@@ -658,6 +731,7 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     view.style.justifyContent = 'center';
                     view.style.width = '100%';
                     view.style.height = '100%';
+                    view.style.overflow = 'hidden';
                     view.style.transition = 'transform 0.45s cubic-bezier(0.22, 1, 0.36, 1)';
                     view.style.willChange = 'transform';
 
@@ -667,8 +741,10 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     strip.style.display = 'flex';
                     strip.style.alignItems = 'center';
                     strip.style.justifyContent = 'center';
-                    strip.style.gap = '16px';
+                    const PAGE_GAP = 16;
+                    strip.style.gap = PAGE_GAP + 'px';
                     strip.style.padding = '12px';
+                    strip.style.boxSizing = 'border-box';
                     strip.style.boxSizing = 'border-box';
 
                     // Append each page to the strip
@@ -724,12 +800,31 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     modal.appendChild(book);
                     document.body.appendChild(modal);
 
-                    // Pagination state
-                    let pageIndex = 0; // left page index
+                    // Pagination state (single page index)
+                    let pageIndex = (window._raLastBook && typeof window._raLastBook.currentPage === 'number') ? window._raLastBook.currentPage : 0;
+
+                    // Page indicator
+                    const pageIndicator = document.createElement('div');
+                    pageIndicator.style.alignSelf = 'center';
+                    pageIndicator.style.padding = '8px 12px';
+                    pageIndicator.style.borderRadius = '8px';
+                    pageIndicator.style.background = 'rgba(255,255,255,0.9)';
+                    pageIndicator.style.fontSize = '14px';
+                    pageIndicator.style.color = '#111827';
+                    pageIndicator.style.margin = '0 6px';
+                    pageIndicator.textContent = `Page ${pageIndex+1} / ${pageElements.length}`;
+
+                    // Insert indicator between prev and next
+                    controls.insertBefore(pageIndicator, nextBtn);
+
                     function updateView() {
-                        // Show pages pageIndex and pageIndex+1 centered
-                        const offset = -((pageWidth + 16) * pageIndex);
+                        // Center the selected page by translating the strip
+                        const offset = -((pageWidth + PAGE_GAP) * pageIndex);
                         strip.style.transform = `translateX(${offset}px)`;
+                        pageIndicator.textContent = `Page ${pageIndex+1} / ${pageElements.length}`;
+                        // persist last page so reopening restores it
+                        if (!window._raLastBook) window._raLastBook = {};
+                        window._raLastBook.currentPage = pageIndex;
                     }
 
                     prevBtn.onclick = () => {
@@ -763,7 +858,21 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     });
                     observer.observe(document.body, { childList: true });
 
-                    // Start at first page
+                    // Centering helper to add padding so the first and last pages can be centered
+                    function centerStrip() {
+                        try {
+                            const viewWidth = view.clientWidth || (Math.min(1000, window.innerWidth * 0.94 - 48));
+                            const sidePad = Math.max(0, Math.floor((viewWidth - pageWidth) / 2));
+                            strip.style.paddingLeft = sidePad + 'px';
+                            strip.style.paddingRight = sidePad + 'px';
+                        } catch (e) { /* ignore */ }
+                    }
+
+                    // Recompute centering on resize
+                    window.addEventListener('resize', () => { centerStrip(); updateView(); });
+
+                    // Initial centering and start view
+                    centerStrip();
                     updateView();
                 }
 
@@ -865,89 +974,95 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
 
             // Provider implementations (client-side; reuse localStorage keys)
             async function generateWithGemini(prompt) {
-                const apiKey = localStorage.getItem('gemini_api_key');
-                if (!apiKey) return { success: false, reason: 'no_key' };
-                try {
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: prompt }] }],
-                            generationConfig: { temperature: 0.7, maxOutputTokens: 1500 }
-                        })
-                    });
-                    if (!response.ok) {
-                        const err = await response.text();
-                        throw new Error('Gemini error: ' + err);
+                // Try each saved Gemini API key until one works
+                const keys = (typeof getApiKeys === 'function') ? (getApiKeys('gemini') || []) : [];
+                if (!keys || keys.length === 0) return { success: false, reason: 'no_key' };
+
+                for (let k = 0; k < keys.length; k++) {
+                    const apiKey = keys[k];
+                    try {
+                        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ parts: [{ text: prompt }] }],
+                                generationConfig: { temperature: 0.7, maxOutputTokens: 1500 }
+                            })
+                        });
+                        if (!response.ok) {
+                            const err = await response.text();
+                            console.warn(`Gemini key ${k} failed:`, err);
+                            continue; // try next key
+                        }
+                        const data = await response.json();
+                        const txt = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text) || '';
+                        if (txt) return { success: true, text: txt, keyIndex: k };
+                    } catch (e) {
+                        console.warn(`Gemini key ${k} threw:`, e);
+                        continue; // try next key
                     }
-                    const data = await response.json();
-                    const txt = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text) || '';
-                    return { success: !!txt, text: txt };
-                } catch (e) { return { success: false, reason: e.message }; }
+                }
+                console.warn('All Gemini text keys failed. Ensure keys have quota or try another provider.');
+                return { success: false, reason: 'all_keys_failed' };
             }
 
             // Generate image using Gemini's image generation
             async function generateImageWithGemini(imagePrompt, referenceImage = null, opts = {}) {
-                const apiKey = localStorage.getItem('gemini_api_key');
-                if (!apiKey) return { success: false, reason: 'no_key' };
+                // Try each saved Gemini API key until one successfully returns an image
+                const keys = (typeof getApiKeys === 'function') ? (getApiKeys('gemini') || []) : [];
+                if (!keys || keys.length === 0) return { success: false, reason: 'no_key' };
 
-                try {
-                    const width = opts.width || 300;
-                    const height = opts.height || 300;
-                    const aspect = (width/height).toFixed(2);
+                const width = opts.width || 300;
+                const height = opts.height || 300;
+                const aspect = (width/height).toFixed(2);
 
-                    const requestBody = {
-                        prompt: {
-                            text: imagePrompt
-                        },
-                        generationConfig: {
-                            numberOfImages: 1,
-                            aspectRatio: (Math.abs(width/height - 4/3) < 0.1) ? "4:3" : undefined,
-                            personGeneration: "allow_adult",
-                            // Best-effort: include explicit size where supported
-                            imageSize: { width, height }
-                        }
-                    };
-
-                    // Add reference image for image-to-image generation
-                    if (referenceImage) {
-                        try {
-                            requestBody.prompt.image = {
-                                bytesBase64Encoded: referenceImage.split(',')[1] // Remove data:image/... prefix
-                            };
-                            // Update prompt to indicate this is image-to-image
-                            requestBody.prompt.text = `Generate an image in the style of the reference image: ${imagePrompt}`;
-                        } catch (e) {
-                            console.warn('Failed to process reference image for Gemini:', e);
-                            // Fall back to text-only generation
-                            delete requestBody.prompt.image;
-                        }
-                    }
-
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(requestBody)
-                    });
-
-                    if (!response.ok) {
-                        const err = await response.text();
-                        throw new Error('Gemini Image error: ' + err);
-                    }
-
-                    const data = await response.json();
-                    if (data.predictions && data.predictions[0] && data.predictions[0].bytesBase64Encoded) {
-                        return {
-                            success: true,
-                            imageData: `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`
+                for (let k = 0; k < keys.length; k++) {
+                    const apiKey = keys[k];
+                    try {
+                        const requestBody = {
+                            prompt: { text: imagePrompt },
+                            generationConfig: {
+                                numberOfImages: 1,
+                                aspectRatio: (Math.abs(width/height - 4/3) < 0.1) ? "4:3" : undefined,
+                                personGeneration: "allow_adult",
+                                imageSize: { width, height }
+                            }
                         };
-                    } else {
-                        throw new Error('No image data received');
+
+                        if (referenceImage) {
+                            try {
+                                requestBody.prompt.image = { bytesBase64Encoded: referenceImage.split(',')[1] };
+                                requestBody.prompt.text = `Generate an image in the style of the reference image: ${imagePrompt}`;
+                            } catch (e) { console.warn('Failed to process reference image for Gemini:', e); delete requestBody.prompt.image; }
+                        }
+
+                        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(requestBody)
+                        });
+
+                        if (!response.ok) {
+                            const err = await response.text();
+                            console.warn(`Gemini image key ${k} failed:`, err);
+                            continue; // try next key
+                        }
+
+                        const data = await response.json();
+                        if (data.predictions && data.predictions[0] && data.predictions[0].bytesBase64Encoded) {
+                            return { success: true, imageData: `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`, keyIndex: k };
+                        } else {
+                            console.warn(`Gemini image key ${k} returned no data`);
+                            continue;
+                        }
+                    } catch (e) {
+                        console.warn(`Gemini image key ${k} threw:`, e);
+                        continue;
                     }
-                } catch (e) {
-                    console.warn('Gemini image generation failed:', e);
-                    return { success: false, reason: e.message };
                 }
+
+                console.warn('All Gemini image keys failed. Ensure keys have quota or try another provider.');
+                return { success: false, reason: 'all_keys_failed' };
             }
 
             // Generate image using Pollinations.ai (free alternative to Gemini)
@@ -1053,22 +1168,33 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
                             reader.readAsDataURL(referenceImageInput.files[0]);
                         }) : null;
 
-                    const preferredImageAI = localStorage.getItem('preferredImageAI') || 'auto';
+
+                    const sel = document.getElementById('raImageProviderSelect');
+                    const preferredImageAI = sel ? (sel.value || (localStorage.getItem('preferredImageAI') || 'auto')) : (localStorage.getItem('preferredImageAI') || 'auto');
                     let newImageResult = null;
 
-                    // Try services (favor pollinations as before)
-                    if (preferredImageAI === 'pollinations' || preferredImageAI === 'auto') {
-                        const pollinationsResult = await generateImageWithPollinations(imagePrompt, referenceImage);
-                        if (pollinationsResult.success) {
-                            newImageResult = { success: true, imageData: pollinationsResult.imageData, service: 'pollinations' };
-                        }
-                    }
+                    // Determine try order
+                    let order = [];
+                    if (preferredImageAI === 'pollinations') order = ['pollinations', 'gemini'];
+                    else if (preferredImageAI === 'gemini') order = ['gemini', 'pollinations'];
+                    else order = ['pollinations', 'gemini'];
 
-                    if (!newImageResult && (preferredImageAI === 'gemini' || preferredImageAI === 'auto')) {
-                        const geminiResult = await generateImageWithGemini(imagePrompt, referenceImage);
-                        if (geminiResult.success) {
-                            newImageResult = { success: true, imageData: geminiResult.imageData, service: 'gemini' };
-                        }
+                    for (const svc of order) {
+                        try {
+                            if (svc === 'pollinations') {
+                                const pollinationsResult = await generateImageWithPollinations(imagePrompt, referenceImage);
+                                if (pollinationsResult && pollinationsResult.success) {
+                                    newImageResult = { success: true, imageData: pollinationsResult.imageData, service: 'pollinations' };
+                                    break;
+                                }
+                            } else if (svc === 'gemini') {
+                                const geminiResult = await generateImageWithGemini(imagePrompt, referenceImage);
+                                if (geminiResult && geminiResult.success) {
+                                    newImageResult = { success: true, imageData: geminiResult.imageData, service: 'gemini' };
+                                    break;
+                                }
+                            }
+                        } catch (e) { console.warn('Regenerate attempt failed for', svc, e); }
                     }
 
                     if (!newImageResult) {
@@ -1207,57 +1333,37 @@ Make it look like a beautiful page from a Disney or Pixar children's book. Retur
 
                 const imagePromises = imagePrompts.map(async (prompt, index) => {
                     try {
-                        // Check user's preferred image AI
-                        const preferredImageAI = localStorage.getItem('preferredImageAI') || 'auto';
+                        // Determine user's selected image AI from dropdown (if present) or fallback to stored preference
+                        const selector = document.getElementById('raImageProviderSelect');
+                        const selectedProvider = selector ? selector.value : (localStorage.getItem('preferredImageAI') || 'auto');
 
-                        if (preferredImageAI === 'pollinations') {
-                            // User prefers Pollinations.ai
-                            const pollinationsResult = await generateImageWithPollinations(prompt, referenceImage);
-                            if (pollinationsResult.success) {
-                                return {
-                                    success: true,
-                                    imageData: pollinationsResult.imageData,
-                                    index,
-                                    service: 'pollinations'
-                                };
-                            }
-                        } else if (preferredImageAI === 'gemini') {
-                            // User prefers Gemini
-                            const geminiResult = await generateImageWithGemini(prompt, referenceImage);
-                            if (geminiResult.success) {
-                                return {
-                                    success: true,
-                                    imageData: geminiResult.imageData,
-                                    index,
-                                    service: 'gemini'
-                                };
-                            }
-                        }
+                        const preferredImageAI = selectedProvider || (localStorage.getItem('preferredImageAI') || 'auto');
 
-                        // Auto mode or preferred service failed - try both
-                        if (preferredImageAI === 'auto' || preferredImageAI === 'pollinations') {
-                            const pollinationsResult = await generateImageWithPollinations(prompt, referenceImage);
-                            if (pollinationsResult.success) {
-                                return {
-                                    success: true,
-                                    imageData: pollinationsResult.imageData,
-                                    index,
-                                    service: 'pollinations'
-                                };
-                            }
-                        }
+                            // Determine try order based on user selection, but always allow fallback to the other
+                            let order = [];
+                            if (preferredImageAI === 'pollinations') order = ['pollinations', 'gemini'];
+                            else if (preferredImageAI === 'gemini') order = ['gemini', 'pollinations'];
+                            else order = ['pollinations', 'gemini']; // auto prefers pollinations first
 
-                        if (preferredImageAI === 'auto' || preferredImageAI === 'gemini') {
-                            const geminiResult = await generateImageWithGemini(prompt, referenceImage);
-                            if (geminiResult.success) {
-                                return {
-                                    success: true,
-                                    imageData: geminiResult.imageData,
-                                    index,
-                                    service: 'gemini'
-                                };
+                            // If last book used a different service for this index, ensure it's tried first
+                            const lastBookService = (window._raLastBook && window._raLastBook.images && window._raLastBook.images[index] && window._raLastBook.images[index].service) || null;
+                            if (lastBookService && order.indexOf(lastBookService) === -1) order.unshift(lastBookService);
+
+                            for (const svc of order) {
+                                try {
+                                    if (svc === 'pollinations') {
+                                        const pollinationsResult = await generateImageWithPollinations(prompt, referenceImage);
+                                        if (pollinationsResult && pollinationsResult.success) {
+                                            return { success: true, imageData: pollinationsResult.imageData, index, service: 'pollinations' };
+                                        }
+                                    } else if (svc === 'gemini') {
+                                        const geminiResult = await generateImageWithGemini(prompt, referenceImage);
+                                        if (geminiResult && geminiResult.success) {
+                                            return { success: true, imageData: geminiResult.imageData, index, service: 'gemini' };
+                                        }
+                                    }
+                                } catch (e) { console.warn('Image generation attempt failed for', svc, e); }
                             }
-                        }
 
                         // Use fallback image if all else fails
                         console.warn('Using fallback image for paragraph', index);
