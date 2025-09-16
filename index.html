@@ -237,21 +237,39 @@
                             <p class="text-xs text-gray-500 mt-1">Get from <a href="https://console.anthropic.com/" target="_blank" class="text-blue-600 hover:underline">Anthropic Console</a></p>
                         </div>
                         <div class="api-provider">
-                            <label class="block text-xs font-medium text-gray-700 mb-1">Hugging Face API Key</label>
-                            <div id="huggingface-keys-container">
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Groq API Key</label>
+                            <div id="groq-keys-container">
                                 <div class="key-input-group mb-2">
-                                    <input type="password" id="huggingfaceKey-0" placeholder="hf_..." 
+                                    <input type="password" id="groqKey-0" placeholder="gsk_..." 
                                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
-                                           onchange="saveApiKeys('huggingface')">
-                                    <button onclick="removeApiKey('huggingface', 0)" class="ml-2 text-red-500 hover:text-red-700 text-sm" style="display: none;">✕</button>
+                                           onchange="saveApiKeys('groq')">
+                                    <button onclick="removeApiKey('groq', 0)" class="ml-2 text-red-500 hover:text-red-700 text-sm" style="display: none;">✕</button>
                                 </div>
                             </div>
-                            <button onclick="addApiKey('huggingface')" class="text-xs text-blue-600 hover:text-blue-800 mb-2">+ Add More</button>
+                            <button onclick="addApiKey('groq')" class="text-xs text-blue-600 hover:text-blue-800 mb-2">+ Add More</button>
                             <div class="flex items-center mt-2">
-                                <input type="checkbox" id="huggingface-enabled" class="mr-2" onchange="saveApiSettings()">
-                                <label for="huggingface-enabled" class="text-xs text-gray-600">Enable Hugging Face API</label>
+                                <input type="checkbox" id="groq-enabled" class="mr-2" onchange="saveApiSettings()">
+                                <label for="groq-enabled" class="text-xs text-gray-600">Enable Groq API</label>
                             </div>
-                            <p class="text-xs text-gray-500 mt-1">Get from <a href="https://huggingface.co/settings/tokens" target="_blank" class="text-blue-600 hover:underline">Hugging Face Hub</a></p>
+                            <p class="text-xs text-gray-500 mt-1">Get from <a href="https://console.groq.com/keys" target="_blank" class="text-blue-600 hover:underline">Groq Console</a></p>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="block text-xs font-medium text-gray-700 mb-1">OpenRouter API Key</label>
+                            <div id="openrouter-keys-container">
+                                <div class="key-input-group mb-2">
+                                    <input type="password" id="openrouterKey-0" placeholder="sk-or-v1-..." 
+                                           class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
+                                           onchange="saveApiKeys('openrouter')">
+                                    <button onclick="removeApiKey('openrouter', 0)" class="ml-2 text-red-500 hover:text-red-700 text-sm" style="display: none;">✕</button>
+                                </div>
+                            </div>
+                            <button onclick="addApiKey('openrouter')" class="text-xs text-blue-600 hover:text-blue-800 mb-2">+ Add More</button>
+                            <div class="flex items-center mt-2">
+                                <input type="checkbox" id="openrouter-enabled" class="mr-2" onchange="saveApiSettings()">
+                                <label for="openrouter-enabled" class="text-xs text-gray-600">Enable OpenRouter API</label>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">Get from <a href="https://openrouter.ai/keys" target="_blank" class="text-blue-600 hover:underline">OpenRouter</a></p>
                         </div>
                     </div>
                     
@@ -930,16 +948,25 @@
                     }
                 }
                 
-                // Method 4: Try Hugging Face API
-                if (localStorage.getItem('huggingface_enabled') === 'true') {
-                    if (generateButton) generateButton.innerHTML = '🤗 Trying Hugging Face... ⏳';
-                    const huggingfaceResult = await tryHuggingFace(transcript, videoData);
-                    if (huggingfaceResult.success) {
-                        return huggingfaceResult;
+                // Method 4: Try Groq API
+                if (localStorage.getItem('groq_enabled') === 'true') {
+                    if (generateButton) generateButton.innerHTML = '🚀 Trying Groq... ⏳';
+                    const groqResult = await tryGroq(transcript, videoData);
+                    if (groqResult.success) {
+                        return groqResult;
                     }
                 }
                 
-                // Method 5: Try local/browser-based LLM
+                // Method 5: Try OpenRouter API
+                if (localStorage.getItem('openrouter_enabled') === 'true') {
+                    if (generateButton) generateButton.innerHTML = '🔄 Trying OpenRouter... ⏳';
+                    const openrouterResult = await tryOpenRouter(transcript, videoData);
+                    if (openrouterResult.success) {
+                        return openrouterResult;
+                    }
+                }
+                
+                // Method 6: Try local/browser-based LLM
                 if (generateButton) generateButton.innerHTML = '💻 Trying Browser-based AI... ⏳';
                 const localResult = await tryLocalLLM(transcript, videoData);
                 if (localResult.success) {
@@ -1166,68 +1193,143 @@
         }
 
         // Method 4: Hugging Face API
-        async function tryHuggingFace(transcript, videoData) {
-            const apiKeys = getApiKeys('huggingface');
-            
+        async function tryGroq(transcript, videoData) {
+            const apiKeys = getApiKeys('groq');
+
             if (apiKeys.length === 0) {
-                console.log('No Hugging Face API keys found');
+                console.log('No Groq API keys found');
                 return { success: false, reason: 'No API keys' };
             }
 
             const prompt = createFlashcardPrompt(transcript, videoData);
-            
+
             // Try each key until one works
             for (let i = 0; i < apiKeys.length; i++) {
                 try {
-                    const response = await fetch('https://api-inference.huggingface.co/models/microsoft/Phi-3-mini-4k-instruct', {
+                    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                         method: 'POST',
                         headers: {
                             'Authorization': `Bearer ${apiKeys[i]}`,
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            inputs: prompt,
-                            parameters: {
-                                max_new_tokens: 1000,
-                                temperature: 0.7,
-                                do_sample: true,
-                                return_full_text: false
-                            }
+                            model: 'llama3-8b-8192',
+                            messages: [
+                                {
+                                    role: 'system',
+                                    content: 'You are an expert educational content creator who creates engaging flashcards from video transcripts.'
+                                },
+                                {
+                                    role: 'user',
+                                    content: prompt
+                                }
+                            ],
+                            max_tokens: 2000,
+                            temperature: 0.7
                         })
                     });
 
                     if (!response.ok) {
-                        console.log(`Hugging Face key ${i + 1} failed:`, response.status);
+                        console.log(`Groq key ${i + 1} failed:`, response.status);
                         continue; // Try next key
                     }
 
                     const data = await response.json();
-                    
-                    if (!data || !data[0] || !data[0].generated_text) {
-                        console.log(`Hugging Face key ${i + 1} returned no content`);
+
+                    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+                        console.log(`Groq key ${i + 1} returned no content`);
                         continue; // Try next key
                     }
-                    
-                    const flashcardsText = data[0].generated_text;
+
+                    const flashcardsText = data.choices[0].message.content;
                     const flashcards = parseFlashcardsFromLLMResponse(flashcardsText);
-                    
+
                     if (flashcards.length === 0) {
-                        console.log(`Hugging Face key ${i + 1} returned no valid flashcards`);
+                        console.log(`Groq key ${i + 1} returned no valid flashcards`);
                         continue; // Try next key
                     }
-                    
-                    return { success: true, flashcards: flashcards, apiProvider: 'huggingface', keyIndex: i };
-                    
+
+                    return { success: true, flashcards: flashcards, apiProvider: 'groq', keyIndex: i };
+
                 } catch (error) {
-                    console.error(`Hugging Face key ${i + 1} failed:`, error);
+                    console.error(`Groq key ${i + 1} failed:`, error);
                     continue; // Try next key
                 }
             }
-            
-            return { success: false, reason: 'All Hugging Face keys failed' };
+
+            return { success: false, reason: 'All Groq keys failed' };
         }
 
-        // Method 5: Browser-based LLM (WebLLM or similar)
+        async function tryOpenRouter(transcript, videoData) {
+            const apiKeys = getApiKeys('openrouter');
+
+            if (apiKeys.length === 0) {
+                console.log('No OpenRouter API keys found');
+                return { success: false, reason: 'No API keys' };
+            }
+
+            const prompt = createFlashcardPrompt(transcript, videoData);
+
+            // Try each key until one works
+            for (let i = 0; i < apiKeys.length; i++) {
+                try {
+                    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${apiKeys[i]}`,
+                            'Content-Type': 'application/json',
+                            'HTTP-Referer': window.location.origin,
+                            'X-Title': 'Maximus Flash Cards'
+                        },
+                        body: JSON.stringify({
+                            model: 'anthropic/claude-3-haiku:beta',
+                            messages: [
+                                {
+                                    role: 'system',
+                                    content: 'You are an expert educational content creator who creates engaging flashcards from video transcripts.'
+                                },
+                                {
+                                    role: 'user',
+                                    content: prompt
+                                }
+                            ],
+                            max_tokens: 2000,
+                            temperature: 0.7
+                        })
+                    });
+
+                    if (!response.ok) {
+                        console.log(`OpenRouter key ${i + 1} failed:`, response.status);
+                        continue; // Try next key
+                    }
+
+                    const data = await response.json();
+
+                    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+                        console.log(`OpenRouter key ${i + 1} returned no content`);
+                        continue; // Try next key
+                    }
+
+                    const flashcardsText = data.choices[0].message.content;
+                    const flashcards = parseFlashcardsFromLLMResponse(flashcardsText);
+
+                    if (flashcards.length === 0) {
+                        console.log(`OpenRouter key ${i + 1} returned no valid flashcards`);
+                        continue; // Try next key
+                    }
+
+                    return { success: true, flashcards: flashcards, apiProvider: 'openrouter', keyIndex: i };
+
+                } catch (error) {
+                    console.error(`OpenRouter key ${i + 1} failed:`, error);
+                    continue; // Try next key
+                }
+            }
+
+            return { success: false, reason: 'All OpenRouter keys failed' };
+        }
+
+        // Method 6: Browser-based LLM (WebLLM or similar)
         async function tryLocalLLM(transcript, videoData) {
             // This would use libraries like WebLLM, Transformers.js, or ONNX.js
             // For demo purposes, we'll simulate this
@@ -1260,40 +1362,12 @@
             }
         }
 
-        // Method 6: Free AI Services (Hugging Face, etc.)
+        // Method 6: Free AI Services
         async function tryFreeAIServices(transcript, videoData) {
             try {
-                // Try Hugging Face Inference API (free tier)
-                const response = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-large', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        // Note: You'd need a free Hugging Face token
-                        'Authorization': 'Bearer ' + (localStorage.getItem('hf_token') || 'demo_token')
-                    },
-                    body: JSON.stringify({
-                        inputs: createFlashcardPrompt(transcript, videoData).substring(0, 1000), // Limit for free tier
-                        parameters: {
-                            max_length: 500,
-                            temperature: 0.7
-                        }
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Hugging Face API error: ${response.status}`);
-                }
-
-                const data = await response.json();
-                const flashcardsText = data[0]?.generated_text || '';
-                const flashcards = parseFlashcardsFromLLMResponse(flashcardsText);
-                
-                if (flashcards.length > 0) {
-                    return { success: true, flashcards: flashcards, apiProvider: 'free', keyIndex: 0 };
-                }
-                
-                throw new Error('No valid flashcards generated');
-                
+                // For now, just return a simple fallback message
+                // In the future, this could be replaced with other free AI services
+                return { success: false, reason: 'Free AI services temporarily unavailable' };
             } catch (error) {
                 console.error('Free AI services failed:', error);
                 return { success: false, reason: error.message };
@@ -4154,7 +4228,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                                 'gemini': 'Google Gemini',
                                 'openai': 'OpenAI GPT',
                                 'claude': 'Anthropic Claude', 
-                                'huggingface': 'Hugging Face',
+                                'groq': 'Groq',
+                                'openrouter': 'OpenRouter',
                                 'local': 'Local AI',
                                 'free': 'Free AI Service',
                                 'pattern': 'Pattern Matching',
@@ -7789,17 +7864,17 @@ window.sortAllCardsTable = function(col) {
                 localStorage.removeItem('gemini_api_keys');
                 localStorage.removeItem('openai_api_keys');
                 localStorage.removeItem('anthropic_api_keys');
-                localStorage.removeItem('huggingface_api_keys');
+                localStorage.removeItem('groq_api_keys');
                 
                 // Clear legacy single keys
                 localStorage.removeItem('gemini_api_key');
                 localStorage.removeItem('openai_api_key');
                 localStorage.removeItem('anthropic_api_key');
-                localStorage.removeItem('huggingface_api_key');
+                localStorage.removeItem('groq_api_key');
                 localStorage.removeItem('hf_token');
                 
                 // Reset UI to single input per provider
-                ['gemini', 'openai', 'anthropic', 'huggingface'].forEach(provider => {
+                ['gemini', 'openai', 'anthropic', 'groq'].forEach(provider => {
                     const container = document.getElementById(`${provider}-keys-container`);
                     if (container) {
                         // Keep only the first input, clear its value
@@ -7848,7 +7923,7 @@ window.sortAllCardsTable = function(col) {
             loadApiKeys('gemini');
             loadApiKeys('openai');
             loadApiKeys('anthropic');
-            loadApiKeys('huggingface');
+            loadApiKeys('groq');
             
             // Restore legacy single keys if they exist and no array keys are saved
             restoreLegacyKeys();
@@ -7863,7 +7938,7 @@ window.sortAllCardsTable = function(col) {
                 'gemini': localStorage.getItem('gemini_api_key'),
                 'openai': localStorage.getItem('openai_api_key'),
                 'anthropic': localStorage.getItem('anthropic_api_key'),
-                'huggingface': localStorage.getItem('huggingface_api_key') || localStorage.getItem('hf_token')
+                'groq': localStorage.getItem('groq_api_key')
             };
             
             // For each provider, if no array keys exist but legacy key exists, restore it
@@ -7895,7 +7970,7 @@ window.sortAllCardsTable = function(col) {
                 'gemini': ['AIzaSyB0c_AloGTCpbvs0rKgi7xviL62aLzVqMk'], // Your original Gemini key
                 'openai': [],
                 'anthropic': [],
-                'huggingface': []
+                'groq': []
             };
             
             let restoredCount = 0;
@@ -7949,14 +8024,16 @@ window.sortAllCardsTable = function(col) {
             const geminiEnabled = document.getElementById('gemini-enabled')?.checked || false;
             const openaiEnabled = document.getElementById('openai-enabled')?.checked || false;
             const anthropicEnabled = document.getElementById('anthropic-enabled')?.checked || false;
-            const huggingfaceEnabled = document.getElementById('huggingface-enabled')?.checked || false;
+            const groqEnabled = document.getElementById('groq-enabled')?.checked || false;
+            const openrouterEnabled = document.getElementById('openrouter-enabled')?.checked || false;
             
             localStorage.setItem('gemini_enabled', geminiEnabled.toString());
             localStorage.setItem('openai_enabled', openaiEnabled.toString());
             localStorage.setItem('anthropic_enabled', anthropicEnabled.toString());
-            localStorage.setItem('huggingface_enabled', huggingfaceEnabled.toString());
+            localStorage.setItem('groq_enabled', groqEnabled.toString());
+            localStorage.setItem('openrouter_enabled', openrouterEnabled.toString());
             
-            console.log('API settings saved:', { geminiEnabled, openaiEnabled, anthropicEnabled, huggingfaceEnabled });
+            console.log('API settings saved:', { geminiEnabled, openaiEnabled, anthropicEnabled, groqEnabled, openrouterEnabled });
         }
 
         // Load API enable/disable settings
@@ -7964,19 +8041,22 @@ window.sortAllCardsTable = function(col) {
             const geminiEnabled = localStorage.getItem('gemini_enabled') === 'true';
             const openaiEnabled = localStorage.getItem('openai_enabled') === 'true';
             const anthropicEnabled = localStorage.getItem('anthropic_enabled') === 'true';
-            const huggingfaceEnabled = localStorage.getItem('huggingface_enabled') === 'true';
+            const groqEnabled = localStorage.getItem('groq_enabled') === 'true';
+            const openrouterEnabled = localStorage.getItem('openrouter_enabled') === 'true';
             
             const geminiCheckbox = document.getElementById('gemini-enabled');
             const openaiCheckbox = document.getElementById('openai-enabled');
             const anthropicCheckbox = document.getElementById('anthropic-enabled');
-            const huggingfaceCheckbox = document.getElementById('huggingface-enabled');
+            const groqCheckbox = document.getElementById('groq-enabled');
+            const openrouterCheckbox = document.getElementById('openrouter-enabled');
             
             if (geminiCheckbox) geminiCheckbox.checked = geminiEnabled;
             if (openaiCheckbox) openaiCheckbox.checked = openaiEnabled;
             if (anthropicCheckbox) anthropicCheckbox.checked = anthropicEnabled;
-            if (huggingfaceCheckbox) huggingfaceCheckbox.checked = huggingfaceEnabled;
+            if (groqCheckbox) groqCheckbox.checked = groqEnabled;
+            if (openrouterCheckbox) openrouterCheckbox.checked = openrouterEnabled;
             
-            console.log('API settings loaded:', { geminiEnabled, openaiEnabled, anthropicEnabled, huggingfaceEnabled });
+            console.log('API settings loaded:', { geminiEnabled, openaiEnabled, anthropicEnabled, groqEnabled, openrouterEnabled });
         }
 
         // Add a new API key input field for a provider
@@ -8037,7 +8117,7 @@ window.sortAllCardsTable = function(col) {
                 'gemini': 'AIzaSy...',
                 'openai': 'sk-...',
                 'anthropic': 'sk-ant-...',
-                'huggingface': 'hf_...'
+                'groq': 'gsk_...'
             };
             return placeholders[provider] || '...';
         }
@@ -8115,7 +8195,8 @@ window.sortAllCardsTable = function(col) {
             const geminiEnabled = document.getElementById('gemini-enabled')?.checked;
             const openaiEnabled = document.getElementById('openai-enabled')?.checked;
             const anthropicEnabled = document.getElementById('anthropic-enabled')?.checked;
-            const huggingfaceEnabled = document.getElementById('huggingface-enabled')?.checked;
+            const groqEnabled = document.getElementById('groq-enabled')?.checked;
+            const openrouterEnabled = document.getElementById('openrouter-enabled')?.checked;
             
             // Test Gemini API
             if (geminiEnabled) {
@@ -8237,42 +8318,86 @@ window.sortAllCardsTable = function(col) {
                 }
             }
             
-            // Test Hugging Face API
-            if (huggingfaceEnabled) {
-                const huggingfaceKeys = getApiKeys('huggingface');
-                if (huggingfaceKeys.length === 0) {
-                    results.push('❌ Hugging Face: No API keys provided');
+            // Test Groq API
+            if (groqEnabled) {
+                const groqKeys = getApiKeys('groq');
+                if (groqKeys.length === 0) {
+                    results.push('❌ Groq: No API keys provided');
                 } else {
                     let workingCount = 0;
-                    for (let i = 0; i < huggingfaceKeys.length; i++) {
+                    for (let i = 0; i < groqKeys.length; i++) {
                         try {
-                            const response = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium', {
+                            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                                 method: 'POST',
                                 headers: {
-                                    'Authorization': `Bearer ${huggingfaceKeys[i]}`,
+                                    'Authorization': `Bearer ${groqKeys[i]}`,
                                     'Content-Type': 'application/json'
                                 },
                                 body: JSON.stringify({
-                                    inputs: 'Hello',
-                                    parameters: { max_length: 20 }
+                                    model: 'llama3-8b-8192',
+                                    messages: [{ role: 'user', content: 'Hello' }],
+                                    max_tokens: 10
+                                })
+                            });
+
+                            if (response.ok) {
+                                results.push(`✅ Groq Key ${i + 1}: Valid (${groqKeys[i].substring(0, 10)}...)`);
+                                workingCount++;
+                            } else {
+                                const error = await response.json();
+                                results.push(`❌ Groq Key ${i + 1}: ${error.error?.message || 'Invalid API key'} (${groqKeys[i].substring(0, 10)}...)`);
+                            }
+                        } catch (error) {
+                            results.push(`❌ Groq Key ${i + 1}: Network error (${groqKeys[i].substring(0, 10)}...)`);
+                        }
+                    }
+                    if (workingCount > 0) {
+                        results.push(`🎉 Groq: ${workingCount}/${groqKeys.length} keys working`);
+                    } else {
+                        results.push('❌ Groq: All keys failed');
+                    }
+                }
+            }
+            
+            // Test OpenRouter API
+            if (openrouterEnabled) {
+                const openrouterKeys = getApiKeys('openrouter');
+                if (openrouterKeys.length === 0) {
+                    results.push('❌ OpenRouter: No API keys provided');
+                } else {
+                    let workingCount = 0;
+                    for (let i = 0; i < openrouterKeys.length; i++) {
+                        try {
+                            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${openrouterKeys[i]}`,
+                                    'Content-Type': 'application/json',
+                                    'HTTP-Referer': window.location.origin,
+                                    'X-Title': 'Maximus Flash Cards'
+                                },
+                                body: JSON.stringify({
+                                    model: 'anthropic/claude-3-haiku:beta',
+                                    messages: [{ role: 'user', content: 'Hello' }],
+                                    max_tokens: 10
                                 })
                             });
                             
                             if (response.ok) {
-                                results.push(`✅ Hugging Face Key ${i + 1}: Valid (${huggingfaceKeys[i].substring(0, 10)}...)`);
+                                results.push(`✅ OpenRouter Key ${i + 1}: Valid (${openrouterKeys[i].substring(0, 10)}...)`);
                                 workingCount++;
                             } else {
                                 const error = await response.json();
-                                results.push(`❌ Hugging Face Key ${i + 1}: ${error.error || 'Invalid API key'} (${huggingfaceKeys[i].substring(0, 10)}...)`);
+                                results.push(`❌ OpenRouter Key ${i + 1}: ${error.error?.message || 'Invalid API key'} (${openrouterKeys[i].substring(0, 10)}...)`);
                             }
                         } catch (error) {
-                            results.push(`❌ Hugging Face Key ${i + 1}: Network error (${huggingfaceKeys[i].substring(0, 10)}...)`);
+                            results.push(`❌ OpenRouter Key ${i + 1}: Network error (${openrouterKeys[i].substring(0, 10)}...)`);
                         }
                     }
                     if (workingCount > 0) {
-                        results.push(`🎉 Hugging Face: ${workingCount}/${huggingfaceKeys.length} keys working`);
+                        results.push(`🎉 OpenRouter: ${workingCount}/${openrouterKeys.length} keys working`);
                     } else {
-                        results.push('❌ Hugging Face: All keys failed');
+                        results.push('❌ OpenRouter: All keys failed');
                     }
                 }
             }
