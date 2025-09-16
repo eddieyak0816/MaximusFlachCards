@@ -408,6 +408,10 @@
                         <select id="currentCardCategorySelect" class="px-3 py-1 border border-gray-300 rounded text-sm">
                             <option value="">Uncategorized</option>
                         </select>
+                        <!-- API Provider info -->
+                        <div id="apiProviderInfo" class="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium" style="display:none;"></div>
+                        <button onclick="testApiProviderDisplay()" class="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs font-medium hover:bg-purple-200" title="Test API provider display">🔧 Test API Info</button>
+                        <button onclick="showApiUsageStats()" class="px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs font-medium hover:bg-indigo-200" title="Show API usage statistics">📊 API Stats</button>
                         <div class="flex space-x-2">
                             <span class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">Easy: <span id="easyCount">0</span></span>
                             <span class="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm">Medium: <span id="mediumCount">0</span></span>
@@ -744,12 +748,16 @@
 
             if (videoData.flashcardsGenerated && flashcards && flashcards.length > 0) {
                 console.log('Flashcards already generated for this videoData - reusing.');
-                return;
+                return { apiProvider: 'cached', keyIndex: -1 };
             }
 
             // Generate via LLM/fallback
             const generated = await generateFlashcardsWithLLM(videoData);
-            flashcards = generated || [];
+            flashcards = generated.success ? generated.flashcards : [];
+            
+            // Store API provider information for tracking
+            const apiProvider = generated.apiProvider || 'unknown';
+            const keyIndex = generated.keyIndex !== undefined ? generated.keyIndex : -1;
 
             // Ensure each generated card has three progressive hints (subtle -> clearer -> specific)
             if (flashcards && flashcards.length > 0) {
@@ -868,7 +876,7 @@
                 // 7. Save to DB
                 try {
                     flashcards.forEach(flashcard => {
-                        try { saveFlashcard(flashcard, videoData); } catch (e) { console.error('Error saving generated flashcard:', e); }
+                        try { saveFlashcard(flashcard, videoData, apiProvider, keyIndex); } catch (e) { console.error('Error saving generated flashcard:', e); }
                     });
                 } catch (e) {
                     console.error('Error iterating generated flashcards:', e);
@@ -876,6 +884,9 @@
             }
 
             videoData.flashcardsGenerated = true;
+            
+            // Return API provider information for the calling function
+            return { apiProvider, keyIndex };
         }
         async function generateFlashcardsWithLLM(videoData) {
             const transcript = videoData.transcript || '';
@@ -897,7 +908,7 @@
                     if (generateButton) generateButton.innerHTML = '⭐ Trying Google Gemini... ⏳';
                     const geminiResult = await tryGemini(transcript, videoData);
                     if (geminiResult.success) {
-                        return geminiResult.flashcards;
+                        return geminiResult;
                     }
                 }
                 
@@ -906,7 +917,7 @@
                     if (generateButton) generateButton.innerHTML = '🤖 Trying OpenAI GPT-4... ⏳';
                     const openAIResult = await tryOpenAI(transcript, videoData);
                     if (openAIResult.success) {
-                        return openAIResult.flashcards;
+                        return openAIResult;
                     }
                 }
                 
@@ -915,7 +926,7 @@
                     if (generateButton) generateButton.innerHTML = '🧠 Trying Anthropic Claude... ⏳';
                     const claudeResult = await tryClaude(transcript, videoData);
                     if (claudeResult.success) {
-                        return claudeResult.flashcards;
+                        return claudeResult;
                     }
                 }
                 
@@ -924,7 +935,7 @@
                     if (generateButton) generateButton.innerHTML = '🤗 Trying Hugging Face... ⏳';
                     const huggingfaceResult = await tryHuggingFace(transcript, videoData);
                     if (huggingfaceResult.success) {
-                        return huggingfaceResult.flashcards;
+                        return huggingfaceResult;
                     }
                 }
                 
@@ -932,19 +943,20 @@
                 if (generateButton) generateButton.innerHTML = '💻 Trying Browser-based AI... ⏳';
                 const localResult = await tryLocalLLM(transcript, videoData);
                 if (localResult.success) {
-                    return localResult.flashcards;
+                    return localResult;
                 }
                 
                 // Method 6: Try free API services
                 if (generateButton) generateButton.innerHTML = '🌐 Trying Free AI Services... ⏳';
                 const freeResult = await tryFreeAIServices(transcript, videoData);
                 if (freeResult.success) {
-                    return freeResult.flashcards;
+                    return freeResult;
                 }
                 
                 // Fallback: Use pattern matching (current demo method)
                 if (generateButton) generateButton.innerHTML = '⚠️ Using Pattern Matching Fallback... ⏳';
-                return await usePatternMatchingFallback(transcript, videoData);
+                const fallbackCards = await usePatternMatchingFallback(transcript, videoData);
+                return { success: true, flashcards: fallbackCards, apiProvider: 'pattern', keyIndex: 0 };
                 
             } catch (error) {
                 console.error('Error in LLM generation:', error);
@@ -1010,7 +1022,7 @@
                         continue; // Try next key
                     }
                     
-                    return { success: true, flashcards: flashcards };
+                    return { success: true, flashcards: flashcards, apiProvider: 'gemini', keyIndex: i };
                     
                 } catch (error) {
                     console.error(`Gemini key ${i + 1} failed:`, error);
@@ -1078,7 +1090,7 @@
                         continue; // Try next key
                     }
                     
-                    return { success: true, flashcards: flashcards };
+                    return { success: true, flashcards: flashcards, apiProvider: 'openai', keyIndex: i };
                     
                 } catch (error) {
                     console.error(`OpenAI key ${i + 1} failed:`, error);
@@ -1142,7 +1154,7 @@
                         continue; // Try next key
                     }
                     
-                    return { success: true, flashcards: flashcards };
+                    return { success: true, flashcards: flashcards, apiProvider: 'claude', keyIndex: i };
                     
                 } catch (error) {
                     console.error(`Claude key ${i + 1} failed:`, error);
@@ -1204,7 +1216,7 @@
                         continue; // Try next key
                     }
                     
-                    return { success: true, flashcards: flashcards };
+                    return { success: true, flashcards: flashcards, apiProvider: 'huggingface', keyIndex: i };
                     
                 } catch (error) {
                     console.error(`Hugging Face key ${i + 1} failed:`, error);
@@ -1240,7 +1252,7 @@
                 const flashcardsText = response.choices[0].message.content;
                 const flashcards = parseFlashcardsFromLLMResponse(flashcardsText);
                 
-                return { success: true, flashcards: flashcards };
+                return { success: true, flashcards: flashcards, apiProvider: 'local', keyIndex: 0 };
                 
             } catch (error) {
                 console.error('Local LLM failed:', error);
@@ -1277,7 +1289,7 @@
                 const flashcards = parseFlashcardsFromLLMResponse(flashcardsText);
                 
                 if (flashcards.length > 0) {
-                    return { success: true, flashcards: flashcards };
+                    return { success: true, flashcards: flashcards, apiProvider: 'free', keyIndex: 0 };
                 }
                 
                 throw new Error('No valid flashcards generated');
@@ -1663,9 +1675,13 @@ Make sure each flashcard tests something specific from the transcript content.`;
             
             try {
                 // Use guarded generation so we only create flashcards once per videoData
-                await generateAndStoreFlashcards();
+                const apiResult = await generateAndStoreFlashcards();
                 console.log('Generated flashcards (guarded):', flashcards);
-            } catch (error) {
+                console.log('API result:', apiResult);
+                
+                // Store API provider info for saving
+                const apiProvider = apiResult?.apiProvider || 'unknown';
+                const keyIndex = apiResult?.keyIndex ?? -1;
                 console.error('Error generating flashcards:', error);
                 flashcards = [{
                     front: "⚠️ Error analyzing content",
@@ -1682,7 +1698,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             // Save all flashcards to database
             if (db) {
                 flashcards.forEach(flashcard => {
-                    saveFlashcard(flashcard, videoData);
+                    saveFlashcard(flashcard, videoData, apiProvider, keyIndex);
                 });
             }
             
@@ -1695,7 +1711,41 @@ Make sure each flashcard tests something specific from the transcript content.`;
             }, 0);
         }
 
-        // [Rest of the existing functions remain the same - calculateNextReview, saveFlashcard, etc.]
+        // Show API usage statistics
+        function showApiUsageStats() {
+            if (!flashcards || flashcards.length === 0) {
+                alert('No flashcards found. Please generate some flashcards first.');
+                return;
+            }
+            
+            const stats = {};
+            let totalWithApiInfo = 0;
+            
+            flashcards.forEach(card => {
+                if (card.apiProvider) {
+                    const key = `${card.apiProvider}${card.keyIndex >= 0 ? ` (Key ${card.keyIndex + 1})` : ''}`;
+                    stats[key] = (stats[key] || 0) + 1;
+                    totalWithApiInfo++;
+                }
+            });
+            
+            let message = `📊 API Usage Statistics:\n\n`;
+            message += `Total flashcards: ${flashcards.length}\n`;
+            message += `Flashcards with API info: ${totalWithApiInfo}\n\n`;
+            
+            if (Object.keys(stats).length > 0) {
+                message += `API Usage Breakdown:\n`;
+                Object.entries(stats)
+                    .sort(([,a], [,b]) => b - a)
+                    .forEach(([api, count]) => {
+                        message += `• ${api}: ${count} cards\n`;
+                    });
+            } else {
+                message += `No API tracking data found yet.\nGenerate new flashcards to see usage stats.`;
+            }
+            
+            alert(message);
+        }
         
         // Helper function to add random jitter to prevent review clustering
         function getRandomJitter(intervalDays) {
@@ -1846,7 +1896,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
             }
 
         // Save flashcard to database
-        function saveFlashcard(flashcard, videoData) {
+        function saveFlashcard(flashcard, videoData, apiProvider = 'unknown', keyIndex = -1) {
             if (!db) {
                 console.error('Database not initialized');
                 return;
@@ -1869,6 +1919,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     videoUrl: videoData.url,
                     subject: videoData.subject,
                     categoryId: '',
+                    apiProvider: apiProvider,
+                    keyIndex: keyIndex,
                     createdAt: new Date().toISOString(),
                     nextReview: new Date().toISOString(),
                     interval: 1,
@@ -1905,6 +1957,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     videoUrl: videoData.url,
                     subject: videoData.subject,
                     categoryId: chosenCat,
+                    apiProvider: apiProvider,
+                    keyIndex: keyIndex,
                     createdAt: new Date().toISOString(),
                     nextReview: new Date().toISOString(), // Available immediately
                     interval: (preset && preset.initialInterval) ? Number(preset.initialInterval) : 1,
@@ -1931,6 +1985,8 @@ Make sure each flashcard tests something specific from the transcript content.`;
                     videoUrl: videoData.url,
                     subject: videoData.subject,
                     categoryId: chosenCat,
+                    apiProvider: apiProvider,
+                    keyIndex: keyIndex,
                     createdAt: new Date().toISOString(),
                     nextReview: new Date().toISOString(),
                     interval: 1,
@@ -4089,6 +4145,28 @@ Make sure each flashcard tests something specific from the transcript content.`;
                             headerSel.value = (card.categoryId === undefined || card.categoryId === null) ? '' : String(card.categoryId); 
                         } catch(e) { 
                             console.log('Could not set category value:', e);
+                        }
+                        
+                        // Display API provider information
+                        const apiInfo = document.getElementById('apiProviderInfo');
+                        if (apiInfo && card.apiProvider) {
+                            const providerNames = {
+                                'gemini': 'Google Gemini',
+                                'openai': 'OpenAI GPT',
+                                'claude': 'Anthropic Claude', 
+                                'huggingface': 'Hugging Face',
+                                'local': 'Local AI',
+                                'free': 'Free AI Service',
+                                'pattern': 'Pattern Matching',
+                                'cached': 'Cached',
+                                'unknown': 'Unknown'
+                            };
+                            const providerName = providerNames[card.apiProvider] || card.apiProvider;
+                            const keyInfo = card.keyIndex >= 0 ? ` (Key ${card.keyIndex + 1})` : '';
+                            apiInfo.textContent = `🤖 ${providerName}${keyInfo}`;
+                            apiInfo.style.display = 'block';
+                        } else if (apiInfo) {
+                            apiInfo.style.display = 'none';
                         }
                         
                         // attach change handler
@@ -8045,7 +8123,7 @@ window.sortAllCardsTable = function(col) {
                 if (geminiKeys.length === 0) {
                     results.push('❌ Gemini: No API keys provided');
                 } else {
-                    let geminiWorking = false;
+                    let workingCount = 0;
                     for (let i = 0; i < geminiKeys.length; i++) {
                         try {
                             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKeys[i]}`, {
@@ -8058,18 +8136,19 @@ window.sortAllCardsTable = function(col) {
                             });
                             
                             if (response.ok) {
-                                results.push(`✅ Gemini: Key ${i + 1} is valid`);
-                                geminiWorking = true;
-                                break; // Stop testing other keys if one works
+                                results.push(`✅ Gemini Key ${i + 1}: Valid (${geminiKeys[i].substring(0, 10)}...)`);
+                                workingCount++;
                             } else {
                                 const error = await response.json();
-                                results.push(`❌ Gemini: Key ${i + 1} - ${error.error?.message || 'Invalid API key'}`);
+                                results.push(`❌ Gemini Key ${i + 1}: ${error.error?.message || 'Invalid API key'} (${geminiKeys[i].substring(0, 10)}...)`);
                             }
                         } catch (error) {
-                            results.push(`❌ Gemini: Key ${i + 1} - Network error`);
+                            results.push(`❌ Gemini Key ${i + 1}: Network error (${geminiKeys[i].substring(0, 10)}...)`);
                         }
                     }
-                    if (!geminiWorking && geminiKeys.length > 0) {
+                    if (workingCount > 0) {
+                        results.push(`🎉 Gemini: ${workingCount}/${geminiKeys.length} keys working`);
+                    } else {
                         results.push('❌ Gemini: All keys failed');
                     }
                 }
@@ -8081,7 +8160,7 @@ window.sortAllCardsTable = function(col) {
                 if (openaiKeys.length === 0) {
                     results.push('❌ OpenAI: No API keys provided');
                 } else {
-                    let openaiWorking = false;
+                    let workingCount = 0;
                     for (let i = 0; i < openaiKeys.length; i++) {
                         try {
                             const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -8098,18 +8177,19 @@ window.sortAllCardsTable = function(col) {
                             });
                             
                             if (response.ok) {
-                                results.push(`✅ OpenAI: Key ${i + 1} is valid`);
-                                openaiWorking = true;
-                                break; // Stop testing other keys if one works
+                                results.push(`✅ OpenAI Key ${i + 1}: Valid (${openaiKeys[i].substring(0, 10)}...)`);
+                                workingCount++;
                             } else {
                                 const error = await response.json();
-                                results.push(`❌ OpenAI: Key ${i + 1} - ${error.error?.message || 'Invalid API key'}`);
+                                results.push(`❌ OpenAI Key ${i + 1}: ${error.error?.message || 'Invalid API key'} (${openaiKeys[i].substring(0, 10)}...)`);
                             }
                         } catch (error) {
-                            results.push(`❌ OpenAI: Key ${i + 1} - Network error`);
+                            results.push(`❌ OpenAI Key ${i + 1}: Network error (${openaiKeys[i].substring(0, 10)}...)`);
                         }
                     }
-                    if (!openaiWorking && openaiKeys.length > 0) {
+                    if (workingCount > 0) {
+                        results.push(`🎉 OpenAI: ${workingCount}/${openaiKeys.length} keys working`);
+                    } else {
                         results.push('❌ OpenAI: All keys failed');
                     }
                 }
@@ -8121,7 +8201,7 @@ window.sortAllCardsTable = function(col) {
                 if (anthropicKeys.length === 0) {
                     results.push('❌ Anthropic: No API keys provided');
                 } else {
-                    let anthropicWorking = false;
+                    let workingCount = 0;
                     for (let i = 0; i < anthropicKeys.length; i++) {
                         try {
                             const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -8139,18 +8219,19 @@ window.sortAllCardsTable = function(col) {
                             });
                             
                             if (response.ok) {
-                                results.push(`✅ Anthropic: Key ${i + 1} is valid`);
-                                anthropicWorking = true;
-                                break; // Stop testing other keys if one works
+                                results.push(`✅ Anthropic Key ${i + 1}: Valid (${anthropicKeys[i].substring(0, 10)}...)`);
+                                workingCount++;
                             } else {
                                 const error = await response.json();
-                                results.push(`❌ Anthropic: Key ${i + 1} - ${error.error?.message || 'Invalid API key'}`);
+                                results.push(`❌ Anthropic Key ${i + 1}: ${error.error?.message || 'Invalid API key'} (${anthropicKeys[i].substring(0, 10)}...)`);
                             }
                         } catch (error) {
-                            results.push(`❌ Anthropic: Key ${i + 1} - Network error`);
+                            results.push(`❌ Anthropic Key ${i + 1}: Network error (${anthropicKeys[i].substring(0, 10)}...)`);
                         }
                     }
-                    if (!anthropicWorking && anthropicKeys.length > 0) {
+                    if (workingCount > 0) {
+                        results.push(`🎉 Anthropic: ${workingCount}/${anthropicKeys.length} keys working`);
+                    } else {
                         results.push('❌ Anthropic: All keys failed');
                     }
                 }
@@ -8162,7 +8243,7 @@ window.sortAllCardsTable = function(col) {
                 if (huggingfaceKeys.length === 0) {
                     results.push('❌ Hugging Face: No API keys provided');
                 } else {
-                    let huggingfaceWorking = false;
+                    let workingCount = 0;
                     for (let i = 0; i < huggingfaceKeys.length; i++) {
                         try {
                             const response = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium', {
@@ -8178,18 +8259,19 @@ window.sortAllCardsTable = function(col) {
                             });
                             
                             if (response.ok) {
-                                results.push(`✅ Hugging Face: Key ${i + 1} is valid`);
-                                huggingfaceWorking = true;
-                                break; // Stop testing other keys if one works
+                                results.push(`✅ Hugging Face Key ${i + 1}: Valid (${huggingfaceKeys[i].substring(0, 10)}...)`);
+                                workingCount++;
                             } else {
                                 const error = await response.json();
-                                results.push(`❌ Hugging Face: Key ${i + 1} - ${error.error || 'Invalid API key'}`);
+                                results.push(`❌ Hugging Face Key ${i + 1}: ${error.error || 'Invalid API key'} (${huggingfaceKeys[i].substring(0, 10)}...)`);
                             }
                         } catch (error) {
-                            results.push(`❌ Hugging Face: Key ${i + 1} - Network error`);
+                            results.push(`❌ Hugging Face Key ${i + 1}: Network error (${huggingfaceKeys[i].substring(0, 10)}...)`);
                         }
                     }
-                    if (!huggingfaceWorking && huggingfaceKeys.length > 0) {
+                    if (workingCount > 0) {
+                        results.push(`🎉 Hugging Face: ${workingCount}/${huggingfaceKeys.length} keys working`);
+                    } else {
                         results.push('❌ Hugging Face: All keys failed');
                     }
                 }
@@ -8199,6 +8281,24 @@ window.sortAllCardsTable = function(col) {
             if (results.length === 0) {
                 alert('No APIs are enabled for testing.');
             } else {
+                // Count total keys tested and working
+                let totalKeys = 0;
+                let totalWorking = 0;
+                
+                results.forEach(result => {
+                    if (result.includes('✅') && result.includes('Key')) {
+                        totalWorking++;
+                    }
+                    if (result.includes('Key') && (result.includes('✅') || result.includes('❌'))) {
+                        totalKeys++;
+                    }
+                });
+                
+                // Add summary at the end
+                if (totalKeys > 0) {
+                    results.push(`\n📊 SUMMARY: ${totalWorking}/${totalKeys} API keys are working`);
+                }
+                
                 alert('API Test Results:\n\n' + results.join('\n'));
             }
             
