@@ -3,23 +3,12 @@
 This file tracks planned features, improvements, and bugs for the Prompt Engineering Learning Lab. Update this list as you add or complete tasks.
 
 ## Planned Tasks
-- [ ] AI-generated audio for spelling cards (auto-generate, cache, allow deletion/recording, attach multiple audio/image files, sample sentence field)
-- [ ] Convert app to Progressive Web App (PWA) for installability/offline use (no app store fees)
-- [x] Add cloze (fill-in-the-blank) card support (creation, review, UI)
 	- [x] Allow 3 tries before rating in cloze review
 	- [x] Show correct answers after rating
-- [ ] Integrate YouTube transcript extraction API/service (auto-fetch captions, fallback to STT or user summary)
-- [ ] Add password protection for private access
-- [ ] Modularize JavaScript and CSS files
-- [ ] Improve mobile responsiveness
-- [ ] Add user authentication (optional)
-- [ ] Create backend proxy for AI API calls (to avoid CORS issues)
-- [ ] Add export/import for flashcards
-- [ ] Write tests for core features
-- [ ] Add more subjects and flashcard templates
 
-## User-requested feature roadmap (saved)
 
+
+-- NOTE: Reviewed and explained the `.bat` launchers (start-maximus.bat, start-maximus-auto.bat, start-maximus-mainprofile.bat) — see project chat for details.
 12) AI-Generated Audio for Spelling Cards
 	 - Why: Enable spelling practice with audio, allow custom/AI voices, and attach relevant media.
 	 - Acceptance criteria:

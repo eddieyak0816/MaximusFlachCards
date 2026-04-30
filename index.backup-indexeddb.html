@@ -6394,23 +6394,21 @@ Make sure each flashcard tests something specific from the transcript content.`;
             const request = store.delete(cardToDelete.id);
             
             request.onsuccess = function() {
-                deleteCardFromSupabase(cardToDelete.id);
-
                 // Remove from study queue
                 studyQueue.splice(currentCardIndex, 1);
-
+                
                 // If we deleted the last card, show study complete
                 if (studyQueue.length === 0) {
                     showStudyComplete();
                     return;
                 }
-
+                
                 // If we deleted a card that's not the last one, currentCardIndex stays the same
                 // (since we removed the current one, the next card shifts into this position)
-
+                
                 // Show the next card (which is now at currentCardIndex)
                 showCurrentCard();
-
+                
                 // Update dashboard counts
                 try {
                     updateDashboard();
@@ -6418,7 +6416,7 @@ Make sure each flashcard tests something specific from the transcript content.`;
                 } catch (e) {
                     console.error('Error refreshing dashboard after delete:', e);
                 }
-
+                
                 alert('Card deleted successfully.');
             };
             
@@ -7078,7 +7076,7 @@ window.sortAllCardsTable = function(col) {
                 const tx = db.transaction(['flashcards'], 'readwrite');
                 const store = tx.objectStore('flashcards');
                 ids.forEach(id => store.delete(id));
-                tx.oncomplete = function() { ids.forEach(id => deleteCardFromSupabase(id)); try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); updateLibraryStats(); };
+                tx.oncomplete = function() { try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); updateLibraryStats(); };
             }
 
             // Bulk change category for selected cards
@@ -7670,7 +7668,7 @@ window.sortAllCardsTable = function(col) {
             const tx = db.transaction(['flashcards'], 'readwrite');
             const store = tx.objectStore('flashcards');
             ids.forEach(id => store.delete(id));
-            tx.oncomplete = function() { ids.forEach(id => deleteCardFromSupabase(id)); try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); updateLibraryStats && updateLibraryStats(); };
+            tx.oncomplete = function() { try { window._allCardsCurrentFilter = document.getElementById('filterCategorySelect') ? document.getElementById('filterCategorySelect').value : null; } catch(e) {} showAllCards(); updateLibraryStats && updateLibraryStats(); };
         }
 
         function bulkChangeCategory() {
@@ -7896,7 +7894,6 @@ window.sortAllCardsTable = function(col) {
             const transaction = db.transaction(['flashcards'], 'readwrite');
             const store = transaction.objectStore('flashcards');
             store.delete(cardId);
-            deleteCardFromSupabase(cardId);
             // Remove row from table
             const modal = document.getElementById('flashcardModal');
             if (modal) {

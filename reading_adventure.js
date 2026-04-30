@@ -4,6 +4,13 @@
     // Expose the function globally so inline onclick handlers work
     window.openReadingAdventure = function() {
         try {
+            // Initialize Gemini image support flag if not set.
+            try {
+                if (localStorage.getItem('gemini_image_supported') === null) {
+                    localStorage.setItem('gemini_image_supported', 'true');
+                }
+            } catch (e) { /* ignore localStorage errors */ }
+
             // If modal already exists, bring into view
             const existing = document.getElementById('readingAdventureModal');
             if (existing) {
@@ -471,60 +478,8 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     pages.appendChild(statusMsg);
                 }
 
-                paragraphs.forEach((p, i) => {
-                    const pWrap = document.createElement('div');
-                    pWrap.setAttribute('data-ra-paragraph', i);
-                    pWrap.style.padding = '15px';
-                    pWrap.style.borderRadius = '12px';
-                    pWrap.style.marginBottom = '15px';
-                    pWrap.style.background = '#f9fafb';
-                    pWrap.style.border = '2px solid #e5e7eb';
-
-                    const imageResult = imageResults.find(img => img.index === i);
-                    const serviceBadge = imageResult && imageResult.service
-                        ? imageResult.service === 'pollinations'
-                            ? '<div style="position:absolute;top:15px;left:15px;background:#10b981;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🌸 Pollinations.ai</div>'
-                            : imageResult.service === 'gemini'
-                            ? '<div style="position:absolute;top:15px;left:15px;background:#8b5cf6;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🤖 Gemini</div>'
-                            : '<div style="position:absolute;top:15px;left:15px;background:#f59e0b;color:white;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🎨 Fallback</div>'
-                        : '';
-
-                                        const imageHtml = imageResult && imageResult.success
-                                                ? `<div style="position:relative;display:inline-block;">
-                                                        ${serviceBadge}
-                                                        <img data-ra-paragraph-index="${i}" src="${imageResult.imageData}" alt="Story illustration" onclick="openFullscreenImage('${imageResult.imageData}')" style="width:300px;height:300px;object-fit:cover;border-radius:12px;margin-bottom:10px;border:3px solid #d1d5db;cursor:pointer;transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'" />
-                                                        <div style="position:absolute;bottom:15px;right:15px;background:rgba(0,0,0,0.7);color:white;padding:4px 8px;border-radius:6px;font-size:12px;pointer-events:none;opacity:0.8;">🔍 Click to enlarge</div>
-                                                        <button onclick="regenerateImage(${i})" style="position:absolute;top:15px;right:15px;background:#3b82f6;color:white;padding:4px 8px;border-radius:6px;font-size:11px;border:none;cursor:pointer;opacity:0.8;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">🔄 Regenerate</button>
-                                                    </div>`
-                        : `<div style="width:300px;height:300px;background:#f3f4f6;border:3px solid #d1d5db;border-radius:12px;margin-bottom:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#9ca3af;font-size:14px;">
-                            🎨 Image generation failed
-                            <button onclick="regenerateImage(${i})" style="margin-top:10px;background:#3b82f6;color:white;padding:6px 12px;border-radius:6px;font-size:12px;border:none;cursor:pointer;">🔄 Try Again</button>
-                          </div>`;
-
-                    pWrap.innerHTML = `
-                        <div style="display:flex;gap:20px;align-items:flex-start;max-width:100%;">
-                            <div style="flex-shrink:0;">
-                                ${imageHtml}
-                            </div>
-                            <div style="flex:1;min-width:0;">
-                                <h3 style="margin:0 0 8px 0;font-size:1.1rem;color:#1f2937;">${i === 0 ? title : ''}</h3>
-                                <p style="margin:0 0 12px 0;color:#111;line-height:1.5;">${escapeHtml(p)}</p>
-                                <button data-ra-play data-ra-text="${escapeAttr(p)}" style="background:#6366f1;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:14px;">
-                                    🔊 Read Aloud
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                    pages.appendChild(pWrap);
-                });
-
-                // wire TTS buttons
-                pages.querySelectorAll('[data-ra-play]').forEach(b => {
-                    b.onclick = () => {
-                        const t = b.getAttribute('data-ra-text');
-                        try { speakTextWithOptions(t); } catch(e) { alert('TTS not available in this environment.'); }
-                    };
-                });
+                // We no longer render the story inline beneath the Open Book button.
+                // The book modal will be created and shown; users can reopen it via the Open Book button.
 
                 // Book modal: creates a popup styled like an open book with page-turning
                 function openBookModal(pagesContent, imageResults = []) {
@@ -576,9 +531,11 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     pagesContainer.style.boxSizing = 'border-box';
 
                     // Page width and height - make single page view so image can be larger
-                    const modalInnerWidth = Math.min(1000, window.innerWidth * 0.94 - 48);
-                    const pageWidth = Math.floor(modalInnerWidth - 48); // single page uses most width
-                    const pageHeight = Math.floor(Math.min(820, window.innerHeight * 0.86 - 48));
+                    // We'll compute final sizes in centerStrip() based on the actual
+                    // view width so exactly one page fits and centers.
+                    let modalInnerWidth = Math.min(1000, window.innerWidth * 0.94 - 48);
+                    let pageWidth = Math.floor(modalInnerWidth - 48); // will be updated
+                    let pageHeight = Math.floor(Math.min(820, window.innerHeight * 0.86 - 48));
 
                     // Build page elements (single page visible at a time)
                     const pageElements = [];
@@ -621,7 +578,8 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                         ttsBtn.onclick = () => {
                             try {
                                 window.speechSynthesis.cancel();
-                                const utter = new SpeechSynthesisUtterance(pagesContent[i].text);
+                                const ttsText = sanitizeForTTS(pagesContent[i].text);
+                                const utter = new SpeechSynthesisUtterance(ttsText);
                                 utter.rate = 0.95;
                                 utter.pitch = 1;
                                 window.speechSynthesis.speak(utter);
@@ -716,6 +674,27 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                             regen.style.cursor = 'pointer';
                             regen.onclick = () => { window.regenerateImage(i); };
                             imgWrap.appendChild(regen);
+
+                            // Add a small badge indicating service and whether reference image was used
+                            try {
+                                const svc = imageResults[i] && imageResults[i].service ? imageResults[i].service : null;
+                                const usedRef = imageResults[i] && imageResults[i].usedReference;
+                                if (svc) {
+                                    const infoBadge = document.createElement('div');
+                                    infoBadge.style.position = 'absolute';
+                                    infoBadge.style.top = '12px';
+                                    infoBadge.style.right = '12px';
+                                    infoBadge.style.background = svc === 'gemini' ? '#8b5cf6' : (svc === 'pollinations' ? '#10b981' : '#9ca3af');
+                                    infoBadge.style.color = 'white';
+                                    infoBadge.style.padding = '6px 8px';
+                                    infoBadge.style.borderRadius = '8px';
+                                    infoBadge.style.fontSize = '12px';
+                                    infoBadge.style.fontWeight = '600';
+                                    infoBadge.textContent = (svc === 'pollinations' ? '🌸 Pollinations' : svc === 'gemini' ? '🤖 Gemini' : 'Fallback') + (usedRef ? ' • ref' : '');
+                                    if (p && getComputedStyle(p).position === 'static') p.style.position = 'relative';
+                                    p.appendChild(infoBadge);
+                                }
+                            } catch (e) { /* ignore */ }
                         }
 
                         p.appendChild(textWrap);
@@ -818,8 +797,13 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     controls.insertBefore(pageIndicator, nextBtn);
 
                     function updateView() {
+                        // Recompute centering first (this updates pageWidth)
+                        centerStrip();
+
                         // Center the selected page by translating the strip
-                        const offset = -((pageWidth + PAGE_GAP) * pageIndex);
+                        // Account for the strip's side padding so the page is truly centered
+                        const padLeft = parseInt(strip.style.paddingLeft) || 0;
+                        const offset = -((pageWidth + PAGE_GAP) * pageIndex) + padLeft;
                         strip.style.transform = `translateX(${offset}px)`;
                         pageIndicator.textContent = `Page ${pageIndex+1} / ${pageElements.length}`;
                         // persist last page so reopening restores it
@@ -861,7 +845,23 @@ Respond in one or two short sentences or ask a single follow-up question to cont
                     // Centering helper to add padding so the first and last pages can be centered
                     function centerStrip() {
                         try {
+                            // Recompute sizes based on the actual view width so one
+                            // page fills the center area and no second page peeks in.
                             const viewWidth = view.clientWidth || (Math.min(1000, window.innerWidth * 0.94 - 48));
+                            modalInnerWidth = viewWidth;
+                            // Leave a little horizontal padding inside the page (48px)
+                            const desiredPageWidth = Math.max(200, Math.floor(viewWidth - 48));
+                            pageWidth = desiredPageWidth;
+                            pageHeight = Math.floor(Math.min(820, window.innerHeight * 0.86 - 48));
+
+                            // Apply new sizes to each page element and adjust image maxHeight
+                            pageElements.forEach(pe => {
+                                pe.style.width = pageWidth + 'px';
+                                pe.style.height = pageHeight + 'px';
+                                const img = pe.querySelector('img');
+                                if (img) img.style.maxHeight = (pageHeight * 0.68) + 'px';
+                            });
+
                             const sidePad = Math.max(0, Math.floor((viewWidth - pageWidth) / 2));
                             strip.style.paddingLeft = sidePad + 'px';
                             strip.style.paddingRight = sidePad + 'px';
@@ -1008,6 +1008,16 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
 
             // Generate image using Gemini's image generation
             async function generateImageWithGemini(imagePrompt, referenceImage = null, opts = {}) {
+                // If we've detected during this session that the Gemini image API
+                // schema is not supported (returns invalid-payload 400), avoid
+                // repeatedly calling it and falling back immediately.
+                try {
+                    if (localStorage.getItem('gemini_image_supported') === 'false') {
+                        console.warn('Gemini image generation marked unsupported for this browser session. Skipping Gemini image calls.');
+                        return { success: false, reason: 'unsupported_image_api' };
+                    }
+                } catch (e) { /* ignore localStorage errors */ }
+
                 // Try each saved Gemini API key until one successfully returns an image
                 const keys = (typeof getApiKeys === 'function') ? (getApiKeys('gemini') || []) : [];
                 if (!keys || keys.length === 0) return { success: false, reason: 'no_key' };
@@ -1043,14 +1053,30 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
                         });
 
                         if (!response.ok) {
-                            const err = await response.text();
-                            console.warn(`Gemini image key ${k} failed:`, err);
+                            const errText = await response.text();
+                            console.warn(`Gemini image key ${k} failed:`, errText);
+
+                            // If the API returns a 400 complaining about unknown fields
+                            // like "prompt" or "generationConfig" it means the
+                            // client-side payload/schema does not match the service
+                            // expectations (this often happens when the public image
+                            // API differs or the endpoint isn't enabled). Persist a
+                            // flag so we stop retrying during the session.
+                            try {
+                                const status = response.status;
+                                if (status === 400 && /Unknown name\s+\"prompt\"|Unknown name\s+\"generationConfig\"/i.test(errText)) {
+                                    try { localStorage.setItem('gemini_image_supported', 'false'); } catch (e) {}
+                                    console.warn('Detected Gemini image API schema mismatch (400). Marking Gemini image support as disabled. Pollinations or fallback images will be used instead.');
+                                    return { success: false, reason: 'unsupported_image_api' };
+                                }
+                            } catch (e) { /* ignore */ }
+
                             continue; // try next key
                         }
 
                         const data = await response.json();
                         if (data.predictions && data.predictions[0] && data.predictions[0].bytesBase64Encoded) {
-                            return { success: true, imageData: `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`, keyIndex: k };
+                            return { success: true, imageData: `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`, keyIndex: k, usedReference: !!requestBody.prompt.image };
                         } else {
                             console.warn(`Gemini image key ${k} returned no data`);
                             continue;
@@ -1097,10 +1123,11 @@ ${transcript ? 'Ensure the story incorporates and reinforces the key concepts an
                         const reader = new FileReader();
                         reader.onload = () => {
                             resolve({
-                                success: true,
-                                imageData: reader.result,
-                                service: 'pollinations'
-                            });
+                                    success: true,
+                                    imageData: reader.result,
+                                    service: 'pollinations',
+                                    usedReference: !!referenceImage
+                                });
                         };
                         reader.onerror = () => {
                             resolve({ success: false, reason: 'Failed to process image data' });
@@ -1357,9 +1384,19 @@ Make it look like a beautiful page from a Disney or Pixar children's book. Retur
                                             return { success: true, imageData: pollinationsResult.imageData, index, service: 'pollinations' };
                                         }
                                     } else if (svc === 'gemini') {
+                                        // Respect the gemini_image_supported flag to avoid
+                                        // repeated failing calls when Gemini's image API
+                                        // schema isn't available in this environment.
+                                        try {
+                                            if (localStorage.getItem('gemini_image_supported') === 'false') {
+                                                console.warn('Skipping Gemini image attempt because gemini_image_supported=false');
+                                                continue;
+                                            }
+                                        } catch (e) { /* ignore localStorage errors */ }
+
                                         const geminiResult = await generateImageWithGemini(prompt, referenceImage);
                                         if (geminiResult && geminiResult.success) {
-                                            return { success: true, imageData: geminiResult.imageData, index, service: 'gemini' };
+                                            return { success: true, imageData: geminiResult.imageData, index, service: 'gemini', usedReference: !!geminiResult.usedReference };
                                         }
                                     }
                                 } catch (e) { console.warn('Image generation attempt failed for', svc, e); }
@@ -1388,6 +1425,15 @@ Make it look like a beautiful page from a Disney or Pixar children's book. Retur
                 });
 
                 const results = await Promise.all(imagePromises);
+
+                // Log per-page provider/key/reference usage to help debugging
+                results.forEach((r, idx) => {
+                    try {
+                        const usedRef = !!r.usedReference;
+                        console.log(`Image page ${idx}: service=${r.service}, success=${!!r.success}, usedReference=${usedRef}`);
+                    } catch (e) { /* ignore */ }
+                });
+
                 return results;
             }
 
@@ -1434,6 +1480,16 @@ Make it look like a beautiful page from a Disney or Pixar children's book. Retur
     function escapeAttr(s) {
         if (!s) return '';
         return String(s).replace(/"/g, '&quot;').replace(/\n/g,' ');
+    }
+
+    // Remove emojis and other pictographic symbols so TTS reads only real text.
+    function sanitizeForTTS(text) {
+        if (!text) return '';
+        // Remove emoji ranges (covers most common emoji blocks) and other non-word punctuation used as icons
+        // This is a best-effort regex; keep it conservative to avoid stripping normal punctuation.
+        return String(text).replace(/[ --]/g, '')
+                         .replace(/[\u{1F300}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1F1E6}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+                         .replace(/\s{2,}/g, ' ').trim();
     }
 
     // Fullscreen image viewer
