@@ -459,6 +459,8 @@
                 try { refreshAllCategorySelects(); } catch (e) { console.error(e); }
                 try { refreshCategoryReviewPanel(); } catch (e) { console.error(e); }
                 try { loadSavedApiKeys(); } catch (e) { /* non-fatal */ }
+                // Seed canonical categories (ids 3-7) if they don't exist yet
+                try { seedCategories(); } catch (e) { console.error('Category seed failed:', e); }
                 // Restore from Supabase if local DB is empty (deferred so Supabase scripts are loaded)
                 setTimeout(function() { try { restoreFromSupabaseIfEmpty(); } catch (e) { console.error('Supabase restore check failed:', e); } }, 500);
             };
@@ -488,6 +490,32 @@
                 }
 
                 console.log('Database schema created/updated');
+            };
+        }
+
+        // Seed the five canonical categories into IndexedDB (runs once; skips existing ids)
+        function seedCategories() {
+            const cats = [
+                { id: 3, name: 'Science' },
+                { id: 4, name: 'Social Studies' },
+                { id: 5, name: 'Language Arts' },
+                { id: 6, name: 'Health & Wellness' },
+                { id: 7, name: 'Test-Taking Skills' }
+            ];
+            const tx = db.transaction(['categories'], 'readwrite');
+            const store = tx.objectStore('categories');
+            cats.forEach(function(cat) {
+                const check = store.get(cat.id);
+                check.onsuccess = function() {
+                    if (!check.result) {
+                        store.put({ id: cat.id, name: cat.name, newCardsPerDay: null, reviewCardsPerDay: null });
+                    }
+                };
+            });
+            tx.oncomplete = function() {
+                try { loadCategories(); } catch(e) {}
+                try { refreshAllCategorySelects(); } catch(e) {}
+                try { refreshCategoryReviewPanel(); } catch(e) {}
             };
         }
 
